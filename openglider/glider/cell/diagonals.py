@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import euklid
 import openglider.mesh as mesh
@@ -59,24 +59,36 @@ class DiagonalSide(BaseModel):
             return self.center + self.width/2
 
     def get_curve(self, rib: Rib) -> euklid.vector.PolyLine3D:
-            # Is it at 0 or 1?
-            if self.is_lower or self.is_upper:
-                factor = 1
-                if self.is_upper:
-                    factor = -1
-                
-                profile = rib.get_hull()
+        """
+        Return the curve (front -> back) alligned with the rib
+        """
+        # Is it at 0 or 1?
+        if self.is_lower or self.is_upper:
+            factor = 1
+            if self.is_upper:
+                factor = -1
+            
+            profile = rib.get_hull()
 
-                front_ik = profile.get_ik(self.start_x(rib) * factor)
-                back_ik = profile.get_ik(self.end_x(rib) * factor)
+            front_ik = profile.get_ik(self.start_x(rib) * factor)
+            back_ik = profile.get_ik(self.end_x(rib) * factor)
 
-                return rib.profile_3d.curve.get(front_ik, back_ik)
-                #return euklid.vector.PolyLine3D(rib.profile_3d[front:back].data.tolist())
-            else:
-                return euklid.vector.PolyLine3D([
-                    rib.align(rib.profile_2d.align([self.start_x, self.height])),
-                    rib.align(rib.profile_2d.align([self.end_x, self.height]))
-                ])
+            return rib.profile_3d.curve.get(front_ik, back_ik)
+            #return euklid.vector.PolyLine3D(rib.profile_3d[front:back].data.tolist())
+        else:
+            return euklid.vector.PolyLine3D([
+                rib.align(rib.profile_2d.align([self.start_x, self.height])),
+                rib.align(rib.profile_2d.align([self.end_x, self.height]))
+            ])
+
+
+VecType = TypeVar("VecType")
+
+def get_list_of_vectors(p1: VecType, p2: VecType, insert_points: int) -> list[VecType]:
+    return [
+        p1 + (p2-p1) * ((i+1)/(insert_points+1))  # type: ignore
+        for i in range(insert_points)
+    ]
 
 
 @dataclass
@@ -89,7 +101,7 @@ class DiagonalRib:
     name: str="unnamed"
 
     hole_num: int=0
-    hole_border_side :float=0.15
+    hole_border_side: float=0.15
     hole_border_front_back: float=0.1
 
     def copy(self) -> DiagonalRib:
@@ -114,7 +126,7 @@ class DiagonalRib:
     def get_3d(self, cell: Cell) -> tuple[euklid.vector.PolyLine3D, euklid.vector.PolyLine3D]:
         """
         Get 3d-Points of a diagonal rib
-        :return: (left_list, right_list)
+        :return: (left_list [front -> back], right_list[same])
         """
         left = self.left.get_curve(cell.rib1)
         right = self.right.get_curve(cell.rib2)
@@ -125,32 +137,20 @@ class DiagonalRib:
         """
         get a mesh from a diagonal (2 poly lines)
         """
-        left, right = self.get_3d(cell)
-        left_2d, right_2d = self.get_flattened(cell)
+        inner, outer = self.get_3d(cell)
+        inner_2d, outer_2d = self.get_flattened(cell)
         
-        envelope_2d = left_2d.nodes
-        envelope_3d = left.nodes
+        envelope_2d = inner_2d.nodes
+        envelope_3d = inner.nodes
 
+        envelope_2d += get_list_of_vectors(inner_2d.nodes[-1], outer_2d.nodes[-1], insert_points)
+        envelope_3d += get_list_of_vectors(inner.nodes[-1], outer.nodes[-1], insert_points)
 
-        def get_list_3d(p1: euklid.vector.Vector3D, p2: euklid.vector.Vector3D) -> list[euklid.vector.Vector3D]:
-            return [
-                p1 + (p2-p1) * ((i+1)/(insert_points+1))
-                for i in range(insert_points)
-            ]
-        def get_list_2d(p1: euklid.vector.Vector2D, p2: euklid.vector.Vector2D) -> list[euklid.vector.Vector2D]:
-            return [
-                p1 + (p2-p1) * ((i+1)/(insert_points+1))
-                for i in range(insert_points)
-            ]
+        envelope_2d += outer_2d.reverse().nodes
+        envelope_3d += outer.reverse().nodes
 
-        envelope_2d += get_list_2d(left_2d.nodes[-1], right_2d.nodes[-1])
-        envelope_3d += get_list_3d(left.nodes[-1], right.nodes[-1])
-
-        envelope_2d += right_2d.reverse().nodes
-        envelope_3d += right.reverse().nodes
-
-        envelope_2d += get_list_2d(right_2d.nodes[0], left_2d.nodes[0])
-        envelope_3d += get_list_3d(right.nodes[0], left.nodes[0])
+        envelope_2d += get_list_of_vectors(outer_2d.nodes[0], inner_2d.nodes[0], insert_points)
+        envelope_3d += get_list_of_vectors(outer.nodes[0], inner.nodes[0], insert_points)
         
         boundary_nodes = list(range(len(envelope_2d)))
         boundary = [boundary_nodes+[0]]
@@ -173,8 +173,8 @@ class DiagonalRib:
         # todo: node_no = kgv(len(left), len(right))
         node_no = 100
 
-        mapping_2d = Mapping([right_2d.resample(node_no), left_2d.resample(node_no)])
-        mapping_3d = Mapping3D([right.resample(node_no), left.resample(node_no)])
+        mapping_2d = Mapping([outer_2d.resample(node_no), inner_2d.resample(node_no)])
+        mapping_3d = Mapping3D([outer.resample(node_no), inner.resample(node_no)])
 
         points_3d: list[euklid.vector.Vector3D] = []
 

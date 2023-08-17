@@ -5,7 +5,7 @@ import euklid
 
 import openglider.airfoil
 from openglider.utils.dataclass import dataclass
-from openglider.glider.rib.rigidfoils import RigidFoilBase, RigidFoilCurved
+from openglider.glider.rib.rigidfoils import _RigidFoilCurved, RigidFoilBase, RigidFoilCurved
 from openglider.vector.unit import Percentage
 
 if typing.TYPE_CHECKING:
@@ -94,16 +94,20 @@ class Sharknose:
 
         for rigidfoil in rib.rigidfoils:
             if rigidfoil.start < position and rigidfoil.end > position:
+
+                if isinstance(rigidfoil, _RigidFoilCurved):
+                    straight_part = rigidfoil.straight_part
+                else:
+                    straight_part = RigidFoilCurved.straight_part
                 # split rigidfoil
                 rigid_1 = RigidFoilCurved(
                     start=rigidfoil.start,
                     end=position,
                     distance=rigidfoil.distance,
                     cap_length=rigidfoil.cap_length,
-                    tension=rigidfoil.tension
+                    tension=rigidfoil.tension,
+                    straight_part=straight_part
                 )
-                if straight_part := getattr(rigidfoil, "straight_part"):
-                    rigid_1.straight_part = straight_part
                     
                 radius, amount =  rigidfoil.get_cap_radius(start=True)
                 rigid_1.circle_radius_start = radius
@@ -116,10 +120,9 @@ class Sharknose:
                     end=rigidfoil.end,
                     distance=rigidfoil.distance,
                     cap_length=rigidfoil.cap_length,
-                    tension=rigidfoil.tension
+                    tension=rigidfoil.tension,
+                    straight_part=straight_part
                 )
-                if straight_part := getattr(rigidfoil, "straight_part"):
-                    rigid_2.straight_part = straight_part
 
                 radius, amount =  rigidfoil.get_cap_radius(start=False)
                 rigid_2.circle_radius_end = radius

@@ -40,29 +40,32 @@ LineType("liros.ntsl250", 2.15, [[100, 0.46],
 LineType("liros.ntsl350", 2.25, [[100, 0.23],
                                  [300, 0.46]], 3500, 3.46, True)
 
-LineType("liros.tsl090", 1.2, [[100, 0.45],
-                               [300, 1.38]], 900, 1.06, True)
+def TSL(strength: int, diameter: float, stretch_curve: list[list[float]], weight: float) -> None:
+    LineType(
+        f"liros.tsl{strength:03d}",
+        diameter,
+        stretch_curve,
+        10*strength,
+        weight,
+        sheated=True,
+        colors=["blue", "green", "red", "yellow", "orange"]
+        )
 
-LineType("liros.tsl115", 1.25, [[100, 0.42],
-                                [300, 1.21]], 1150, 1.18, True)
+TSL(90, 1.2, [[100, 0.45], [300, 1.38]], 1.06)
 
-LineType("liros.tsl140", 1.3, [[100, 0.25],
-                               [300, 0.88]], 1400, 1.39, True)
+TSL(115, 1.25, [[100, 0.42], [300, 1.21]], 1.18)
 
-LineType("liros.tsl190", 1.55, [[100, 0.25],
-                                [300, 0.71]], 1900, 1.76, True)
+TSL(140, 1.3, [[100, 0.25], [300, 0.88]], 1.39)
 
-LineType("liros.tsl220", 1.65, [[100, 0.29],
-                                [300, 0.75]], 2200, 2.12, True)
+TSL(190, 1.55, [[100, 0.25], [300, 0.71]], 1.76)
 
-LineType("liros.tsl280", 1.8, [[100, 0.17],
-                               [300, 0.46]], 2800, 2.55, True)
+TSL(220, 1.65, [[100, 0.29], [300, 0.75]], 2.12)
 
-LineType("liros.tsl380", 2.2, [[100, 0.18],
-                               [300, 0.46]], 3800, 3.46, True)
+TSL(280, 1.8, [[100, 0.17], [300, 0.46]], 2.55)
 
-LineType("liros.tsl500", 2.37, [[100, 0.16],
-                                [300, 0.42]], 5000, 4.6, True)
+TSL(380, 2.2, [[100, 0.18], [300, 0.46]], 3.46)
+
+TSL(500, 2.37, [[100, 0.16], [300, 0.42]], 4.6)
 
 # DFL: Brake line
 

@@ -403,7 +403,7 @@ class ParametricGlider:
                 ballooning=ballooning,
                 name=f"c{cell_no+1}",
                 attachment_points=[],
-                ballooning_ramp=self.tables.ballooning_factors.get_ballooning_ramp(cell_no)
+                ballooning_ramp=self.tables.ballooning_factors.get_ballooning_ramp(cell_no, resolvers=resolvers)
                 )
 
             attachment_points = self.tables.attachment_points_cell.get(cell_no, curves=curves, cell=cell)

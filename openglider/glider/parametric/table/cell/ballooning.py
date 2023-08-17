@@ -1,14 +1,27 @@
+from typing import Any
 from openglider.glider.parametric.table.base import CellTable, Keyword
 
 import logging
 
+from openglider.glider.parametric.table.base.dto import DTO
+
+from openglider.vector.unit import Percentage
+
 logger = logging.getLogger(__name__)
+
+class BallooningRamp(DTO):
+    x: Percentage
+
+    def get_object(self) -> float:
+        return self.x.si
 
 class BallooningTable(CellTable):
     keywords: dict[str, Keyword] = {
         "BallooningFactor": Keyword(attributes=["amount_factor"]),
-        "BallooningMerge": Keyword(attributes=["merge_factor"]),
-        "BallooningRamp": Keyword(attributes=["ballooning_ramp"], target_cls=dict)
+        "BallooningMerge": Keyword(attributes=["merge_factor"])
+    }
+    dtos = {
+        "BallooningRamp": BallooningRamp,
     }
 
     def get_merge_factors(self, factor_list: list[float]) -> list[tuple[float, float]]:
@@ -34,14 +47,5 @@ class BallooningTable(CellTable):
         
         return list(zip(merge_factors, multipliers))
     
-    def get_ballooning_ramp(self, row: int) -> float | None:
-        value = self.get_one(row_no=row, keywords=["BallooningRamp"])
-
-        if value is not None:
-            return value["ballooning_ramp"]
-
-        return None
-
-
-
-
+    def get_ballooning_ramp(self, row: int, **kwargs: Any) -> float | None:
+        return self.get_one(row_no=row, keywords=["BallooningRamp"], **kwargs)

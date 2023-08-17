@@ -744,7 +744,6 @@ class LineSet:
 
         line_name_table = self._get_lines_table(lambda line: [line.name], insert_node_names=False)
         line_type_table = self._get_lines_table(lambda line: [f"{line.type.name} ({line.color})"], insert_node_names=False)
-        line_color_table = self._get_lines_table(lambda line: [line.color], insert_node_names=False)
 
         def get_checklength(line: Line, upper_lines: Any) -> list[float]:
             line_length = self.get_line_length(line).get_checklength()
@@ -772,7 +771,6 @@ class LineSet:
         
         length_table.append_right(line_name_table)
         length_table.append_right(line_type_table)
-        length_table.append_right(line_color_table)
 
         return length_table
 
