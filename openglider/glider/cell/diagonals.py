@@ -288,16 +288,6 @@ class TensionStrap(DiagonalRib):
             "height": self.left.height
         }
     
-class (TensionStrap):
-
-    num_folds: int=0
-    hole_num: int=2
-    hole_border_side: float=0.2
-    hole_border_front_back: float=0.1
-
-
-
-
 class TensionLine(TensionStrap):
     def __init__(self, left: Percentage, right: Percentage, material_code: str="", name: str=""):
         """
