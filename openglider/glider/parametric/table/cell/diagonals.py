@@ -29,17 +29,17 @@ class DiagonalDTO(QRDTO):
 
         return diagonal
     
-class Diagonalw2HolesDTO(DiagonalDTO):
+class DiagonalWithHolesDTO(DiagonalDTO):
 
     num_folds: int
-    hole_num: int
-    hole_border_side :float
+    num_holes: int
+    hole_border_side: float
     hole_border_front_back: float
 
     def get_object(self) -> DiagonalRib:
         diagonal = super().get_object()
         diagonal.num_folds = self.num_folds
-        diagonal.hole_num = self.hole_num
+        diagonal.hole_num = self.num_holes
         diagonal.hole_border_side = self.hole_border_side
         diagonal.hole_border_front_back= self.hole_border_front_back
 
@@ -82,7 +82,9 @@ class DiagonalTable(CellTable):
 
     dtos = {
         "QR": QRDTO,
-        "DIAGONAL": DiagonalDTO
+        "DIAGONAL": DiagonalDTO,
+        "DiagonalWithHoles": DiagonalWithHolesDTO
+
     }
 
 class StrapTable(CellTable):
