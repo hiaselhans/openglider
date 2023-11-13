@@ -78,7 +78,7 @@ class DiagonalSide(BaseModel):
                     rib.align(rib.profile_2d.align([self.start_x, self.height])),
                     rib.align(rib.profile_2d.align([self.end_x, self.height]))
                 ])
-
+            
 
 class DiagonalRib(BaseModel):
     left: DiagonalSide
@@ -185,7 +185,7 @@ class DiagonalRib(BaseModel):
         for point in tri_mesh.points[len(envelope_2d):]:
             ik = mapping_2d.get_iks(point)
             points_3d.append(mapping_3d.get_point(*ik))
-        
+
         drib_mesh = mesh.Mesh.from_indexed(points_3d, {"diagonals": [(p, {}) for p in tri_mesh.elements]}, boundaries={"diagonals": boundary_nodes})
 
         min_size = drib_mesh.polygon_size()[0]
@@ -249,7 +249,7 @@ class DiagonalRib(BaseModel):
         return average x value for sorting
         """
         return (self.left.center + self.right.center)/2
-
+    
 
 class TensionStrap(DiagonalRib):
     hole_num: int=0
@@ -276,7 +276,7 @@ class TensionStrap(DiagonalRib):
             "width": (self.left.width + self.right.width)/2,
             "height": self.left.height
         }
-
+    
 class TensionLine(TensionStrap):
     def __init__(self, left: Percentage, right: Percentage, material_code: str="", name: str=""):
         """
