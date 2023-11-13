@@ -78,7 +78,7 @@ class DiagonalSide(BaseModel):
                     rib.align(rib.profile_2d.align([self.start_x, self.height])),
                     rib.align(rib.profile_2d.align([self.end_x, self.height]))
                 ])
-
+            
 
 class DiagonalRib(BaseModel):
     left: DiagonalSide
@@ -249,6 +249,17 @@ class DiagonalRib(BaseModel):
         return average x value for sorting
         """
         return (self.left.center + self.right.center)/2
+    
+
+
+class DiagonalWith2Holes(DiagonalRib):
+
+    num_folds: int = 0
+    hole_num: int = 2
+    hole_border_side :float=0.2
+    hole_border_front_back: float=0.1
+
+
 
 
 class TensionStrap(DiagonalRib):
