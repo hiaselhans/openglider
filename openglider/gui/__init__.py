@@ -39,6 +39,7 @@ def start_main_window() -> None:
     #    task.stop()
 
     #os.killpg(0, signal.SIGKILL)
+    app.state.clean()
     sys.exit(0)
 
 

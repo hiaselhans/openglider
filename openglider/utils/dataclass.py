@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, TypeVar
 from collections.abc import Callable
+import euklid
 
 import pydantic
+from pydantic import model_validator
 import pydantic.validators
 
 #from pydantic import Field as field
@@ -100,8 +102,9 @@ class BaseModel(pydantic.BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         ignored_types=(CachedProperty,),
-        extra=pydantic.Extra.forbid
+        extra="forbid"
         )
+    
     def __eq__(self, other: Any) -> bool:
         return other.__class__ == self.__class__ and self.__dict__ == other.__dict__
 
@@ -110,3 +113,22 @@ class BaseModel(pydantic.BaseModel):
 
     def __hash__(self) -> int:
         return hash_list(*self.dict().values())
+    
+    @model_validator(mode="before")
+    @classmethod
+    def validate_basemodel(cls, data: dict[str, Any]) -> dict[str, Any]:
+        # TODO: this is an ugly hack
+        evaluated_types = (
+            euklid.vector.Vector3D,
+            euklid.vector.Vector2D,
+        )
+
+        for field_name, field in cls.model_fields.items():
+            if field.annotation in evaluated_types:
+                value = data.get(field_name, None)
+                if value is not None and type(value) != field.annotation:
+                    data[field_name] = field.annotation(value)
+        
+        return data
+
+

@@ -31,6 +31,7 @@ class Node(BaseModel):
         return{
             'node_type': self.node_type.name,
             'position': list(self.position),
+            'force': list(self.force),
             "name": self.name
         }
     

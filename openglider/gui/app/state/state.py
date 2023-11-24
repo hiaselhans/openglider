@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar
+from openglider.gui.app.files import OpengliderDir
 
 from openglider.gui.state.glider_list import GliderList
 import openglider.jsonify
@@ -46,15 +47,22 @@ class ApplicationState(BaseModel):
     _dump_path: ClassVar[str] = "/tmp/openglider_state.json"
 
     def dump(self) -> None:
-        with open(self._dump_path, "w") as fp:
-            openglider.jsonify.dump(self, fp)
+        with open(OpengliderDir.state_file_name(), "w") as state_file:
+            openglider.jsonify.dump(self, state_file)
         
     @classmethod
     def load(cls) -> ApplicationState:
-        if os.path.isfile(cls._dump_path):
-            with open(cls._dump_path) as state_file:
+        try:
+            with open(OpengliderDir.state_file_name(), "r") as state_file:
                 result = openglider.jsonify.load(state_file)
 
                 return result["data"]
-            
-        return cls()
+        except Exception as e:
+            print(e)
+            return cls()
+    
+    @classmethod
+    def clean(cls) -> None:
+        state_filename = OpengliderDir.state_file_name()
+        state_filename.unlink(missing_ok=True)
+

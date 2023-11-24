@@ -14,7 +14,7 @@ OpReturnType = TypeVar("OpReturnType")
 class Quantity(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(
         frozen=True,
-        extra=pydantic.Extra.forbid,
+        extra="forbid"
     )
     __pydantic_custom_init__ = True
     value: float
@@ -23,34 +23,42 @@ class Quantity(pydantic.BaseModel):
     unit_variants: ClassVar[dict[str, float]]
     display_unit: str | None = None
 
-    re_number: ClassVar[str] = r"[-+]?\d*\.\d*(?:[eE][+-]?\d+)?|\d+"
+    re_number: ClassVar[str] = r"[-+]?\d*(?:\.\d*)?(?:[eE][+-]?\d+)?|\d+"
     re_unit: ClassVar[str] = r"[\w°%]+)(?!\S"
     re_combined: ClassVar[re.Pattern] = re.compile(f"({re_number})\s*({re_unit})")
 
     def __init__(self, value: float | str, unit: str | None=None, display_unit: str | None=None):
+        data = self._get_init_args(value, unit, display_unit)
+        super().__init__(**data)
+    
+    @classmethod
+    def _get_init_args(cls, value: float | str, unit: str | None=None, display_unit: str | None=None) -> dict[str, Any]:
         value_float = None
-
         if isinstance(value, str):
             assert unit is None
-            if match := self.__class__.re_combined.match(value):
+            if match := cls.re_combined.match(value):
                 value_str, unit = match.groups()
                 value_float = float(value_str)
         
         if value_float is None:
             value_float = float(value)
 
-        if unit is None:
-            super().__init__(value=value)
-        else:
-            if unit == self.unit:
-                factor = 1.
-            else:
-                try:
-                    factor = self.__class__.unit_variants[unit]
-                except KeyError:
-                    raise ValueError(f"invalid unit for {self.__class__.__name__}: {unit}")
-            
-            super().__init__(value=value_float * factor, display_unit=unit or display_unit)
+        factor = 1.
+
+        if unit is not None and unit != cls.unit:
+            try:
+                factor = cls.unit_variants[unit]
+            except KeyError:
+                raise ValueError(f"invalid unit for {cls.__name__}: {unit}")
+        
+        dct: dict[str, Any] = {
+            "value": value_float * factor,
+        }
+
+        if unit or display_unit:
+            dct["display_unit"] = unit or display_unit
+        
+        return dct
 
     def get(self, unit: str | None=None) -> float:
         if unit is None or unit == self.unit:
@@ -165,7 +173,7 @@ class Quantity(pydantic.BaseModel):
     @classmethod
     def _validate(cls, v: Any) -> dict[str, Any] | Self:
         if isinstance(v, (str, float, int)):
-            return {"value": v}
+            return cls._get_init_args(value=v)
         elif isinstance(v, cls):
             if v.unit == cls.unit:
                 return v

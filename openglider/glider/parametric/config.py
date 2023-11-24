@@ -1,5 +1,5 @@
 import re
-from typing import Self
+from typing import Any, Self
 
 import euklid
 
@@ -25,6 +25,13 @@ class ParametricGliderConfig(BaseModel):
     stabi_cell_length: float = 0.6
 
     version: str = __version__
+
+    @classmethod
+    def __from_json__(cls, **data: Any) -> Self:
+        for name in "pilot_position", "brake_offset":
+            data[name] = euklid.vector.Vector3D(data[name])
+        
+        return cls(**data)
 
     def get_lower_attachment_points(self) -> dict[str, Node]:
         points = {

@@ -16,23 +16,13 @@ from collections.abc import Callable
 import qtmodern.styles
 import qtmodern.windows
 from openglider.gui.qt import QtWidgets
+from openglider.gui.app.files import OpengliderDir
 from qasync import QEventLoop
 
 if TYPE_CHECKING:
     from openglider.gui.app.state import ApplicationState
 
-
-
-og_dir = os.path.join(os.path.expanduser("~"), "openglider")
-
-if not os.path.isdir(og_dir):
-    os.mkdir(og_dir)
-logfile = os.path.join(og_dir, "error_log")
-statefile = os.path.join(og_dir, "state.json")
-logger = logging.getLogger("openglider")
-
-# bug in qtpy!
-os.environ.setdefault('QT_API', 'pyside2')
+logger = logging.getLogger(__name__)
 
 
 class GliderApp(QtWidgets.QApplication):
@@ -150,21 +140,20 @@ class GliderApp(QtWidgets.QApplication):
             separator,
             errmsg,
             separator,
-            f"Written to log-file: {logfile}"
+            f"Written to log-file in {OpengliderDir.base_path}"
         ])
 
         try:
-            f = open(logfile, "a+")
-            f.write("\n".join([
-                notice,
-                time_string,
-                separator,
-                errmsg,
-                separator,
-                traceback_message,
-                separator
-            ]))
-            f.close()
+            with OpengliderDir.logfile("a+") as logfile:
+                logfile.write("\n".join([
+                    notice,
+                    time_string,
+                    separator,
+                    errmsg,
+                    separator,
+                    traceback_message,
+                    separator
+                ]))
         except OSError:
             pass
 
