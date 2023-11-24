@@ -28,24 +28,6 @@ class DiagonalDTO(QRDTO):
         diagonal.material_code = self.material_code
 
         return diagonal
-    
-
-
-class DiagonalWithHolesDTO(DiagonalDTO):
-
-    num_folds: int
-    num_holes: int
-    hole_border_side: float
-    hole_border_front_back: float
-
-    def get_object(self) -> DiagonalRib:
-        diagonal = super().get_object()
-        diagonal.num_folds = self.num_folds
-        diagonal.hole_num = self.num_holes
-        diagonal.hole_border_side = self.hole_border_side
-        diagonal.hole_border_front_back= self.hole_border_front_back
-
-        return diagonal
 
 class StrapDTO(DTO):
     position: CellTuple[Percentage]
@@ -84,8 +66,7 @@ class DiagonalTable(CellTable):
 
     dtos = {
         "QR": QRDTO,
-        "DIAGONAL": DiagonalDTO,
-        "DiagonalWithHoles": DiagonalWithHolesDTO
+        "DIAGONAL": DiagonalDTO
     }
 
 class StrapTable(CellTable):
