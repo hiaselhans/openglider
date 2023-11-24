@@ -27,14 +27,16 @@ class DribPlot:
 
         left, right = self.drib.get_flattened(self.cell)
         p1, p2 = left.nodes[0], right.nodes[0]
-        self.p1 = p1
-        self.p2 = p2
         left = left.mirror(p1, p2)
         right = right.mirror(p1, p2)
+
+        self.p1 = p1
+        self.p2 = p2
 
         center_left = left.get(left.walk(0, left.get_length()/2))
         center_right = right.get(right.walk(0, right.get_length()/2))
         angle = (center_right - center_left).angle()
+
         self.angle = angle
 
         self.left = left.rotate(-angle, euklid.vector.Vector2D([0,0]))
@@ -158,12 +160,15 @@ class DribPlot:
         else:
             node_index = 0
         # text_p1 = left_out[0] + self.config.drib_text_position * (right_out[0] - left_out[0])
+        val_valign = 0.6
+        if self.drib.num_folds == 0:
+            val_valign *= -1
         plotpart.layers["text"] += Text(f" {self.drib.name} ",
                                         self.left.nodes[node_index],
                                         self.right.nodes[node_index],
                                         size=self.config.drib_allowance_folds * 0.6,
                                         height=0.6,
-                                        valign=0.6).get_vectors()
+                                        valign=val_valign).get_vectors()
 
     def flatten(self) -> PlotPart:
         return self._flatten(self.drib.num_folds)

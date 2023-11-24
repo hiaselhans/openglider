@@ -15,12 +15,29 @@ class GliderViewConfig(BaseModel):
     show_diagonals: bool = True
     show_straps: bool = True
 
-    profile_numpoints: int = 40
+    show_miniribs: bool = True
+
+    show_highres: bool = False
+
+    profile_numpoints: int = 25
     numribs: int = 3
+    line_numpoints: int = 3
+    hole_numpoints: int = 10
 
     def needs_recalc(self, old_config: GliderViewConfig | None=None) -> bool:
         if old_config is None:
             return True
+        
+        if self.show_highres:
+            self.numribs = 12
+            self.profile_numpoints = 120
+            self.line_numpoints = 12
+            self.hole_numpoints = 30
+        else:
+            self.numribs = 3
+            self.profile_numpoints = 25
+            self.line_numpoints = 3
+            self.hole_numpoints = 10
         
         if old_config.numribs != self.numribs:
             return True
@@ -41,7 +58,8 @@ class GliderViewConfig(BaseModel):
             keys.append("diagonals")
         if self.show_straps:
             keys.append("straps")
-        
+        if self.show_miniribs:
+            keys.append("miniribs")
         return keys
 
 
@@ -58,6 +76,8 @@ class GliderViewConfigWidget(QtWidgets.QWidget):
         self.add_button("lines")
         self.add_button("diagonals")
         self.add_button("straps")
+        self.add_button("miniribs")
+        self.add_button("highres")
 
     def add_button(self, name: str) -> None:
         checkbox = QtWidgets.QCheckBox(self)

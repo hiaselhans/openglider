@@ -78,19 +78,20 @@ class DiagonalSide(BaseModel):
                     rib.align(rib.profile_2d.align([self.start_x, self.height])),
                     rib.align(rib.profile_2d.align([self.end_x, self.height]))
                 ])
-            
+
 
 class DiagonalRib(BaseModel):
     left: DiagonalSide
     right: DiagonalSide
 
-    num_folds: int=1
     material_code: str=""
     name: str="unnamed"
 
+    num_folds: int=1
+
     hole_num: int=0
-    hole_border_side :float=0.15
-    hole_border_front_back: float=0.1
+    hole_border_side :float=0.2
+    hole_border_front_back: float=0.15
 
     def copy(self, **kwargs: Any) -> DiagonalRib:
         return copy.copy(self)
@@ -121,7 +122,7 @@ class DiagonalRib(BaseModel):
 
         return left, right
 
-    def get_mesh(self, cell: Cell, insert_points: int=10, project_3d: bool=False) -> mesh.Mesh:
+    def get_mesh(self, cell: Cell, insert_points: int=10, project_3d: bool=False, hole_res: int = 40) -> mesh.Mesh:
         """
         get a mesh from a diagonal (2 poly lines)
         """
@@ -155,7 +156,7 @@ class DiagonalRib(BaseModel):
         boundary_nodes = list(range(len(envelope_2d)))
         boundary = [boundary_nodes+[0]]
         
-        holes, hole_centers = self.get_holes(cell)
+        holes, hole_centers = self.get_holes(cell, hole_res)
 
         triangulation_points = envelope_2d[:]
         
@@ -251,7 +252,7 @@ class DiagonalRib(BaseModel):
         return average x value for sorting
         """
         return (self.left.center + self.right.center)/2
-    
+
 
 class TensionStrap(DiagonalRib):
     hole_num: int=0
@@ -278,7 +279,7 @@ class TensionStrap(DiagonalRib):
             "width": (self.left.width + self.right.width)/2,
             "height": self.left.height
         }
-    
+
 class TensionLine(TensionStrap):
     def __init__(self, left: Percentage, right: Percentage, material_code: str="", name: str=""):
         """

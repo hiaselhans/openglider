@@ -47,20 +47,17 @@ class PatternConfigOld(Config):
 
     marks_strap = marks.Inside(marks.Line(name="strap"))
 
-    distribution_controlpoints: Distribution | Callable[[Rib], Distribution] = Distribution.from_linear(20, -1, 1)
+    distribution_controlpoints: Distribution | Callable[[Rib], Distribution] = Distribution.from_cos_distribution(30)
     marks_controlpoint = marks.Dot(0.2)
 
     marks_panel_cut = marks.Combine(marks.Line(name="panel_cut"), marks.Dot(0.2, 0.8))
     rib_text_in_seam = False
-    rib_text_pos = -0.005
+    rib_text_pos = 0.03
 
     allowance_design = 0.012  # trailing_edge
 
     drib_allowance_folds = Length(0.012)
-    drib_num_folds = 1
     drib_text_position = 0.1
-
-    strap_num_folds = 1
 
     insert_attachment_point_text = True
 
@@ -84,7 +81,6 @@ class OtherPatternConfig(PatternConfigOld):
     
     allowance_design = 0.01
     drib_allowance_folds = Length("1cm")
-    strap_num_folds = 1
     allowance_entry_open = 0.021
 
 
