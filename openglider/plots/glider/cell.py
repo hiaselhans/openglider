@@ -12,6 +12,7 @@ from openglider.glider.cell.panel import Panel, PANELCUT_TYPES
 from openglider.plots.config import PatternConfig
 from openglider.plots.cuts import Cut
 from openglider.plots.glider.diagonal import DribPlot, StrapPlot
+from openglider.plots.glider.minirib import MiniRibPlot
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.utils.cache import cached_property
 from openglider.utils.config import Config
@@ -199,6 +200,7 @@ class PanelPlot:
         self._insert_attachment_points(plotpart)
         self._insert_diagonals(plotpart)
         self._insert_rigidfoils(plotpart)
+        self._insert_miniribs(plotpart)
         #self._insert_center_rods(plotpart)
         # TODO: add in parametric way
 
@@ -491,6 +493,18 @@ class PanelPlot:
                 plotpart.layers["L0"].append(euklid.vector.PolyLine2D([line.get(0)]))
                 plotpart.layers["L0"].append(euklid.vector.PolyLine2D([line.get(len(line)-1)]))
 
+    def _insert_miniribs(self, plotpart: PlotPart) -> None:
+        for minirib in self.cell.miniribs:
+            if minirib.draw_panel_marks(self.cell, self.panel) is not None:
+                line = minirib.draw_panel_marks(self.cell, self.panel)
+
+                if line is not None:
+                    plotpart.layers["marks"].append(line)
+
+                    # laser dots
+                    plotpart.layers["L0"].append(euklid.vector.PolyLine2D([line.get(0)]))
+                    plotpart.layers["L0"].append(euklid.vector.PolyLine2D([line.get(len(line)-1)]))
+
 
 class FlattenedCellWithAllowance(FlattenedCell):
     outer: tuple[euklid.vector.PolyLine2D, euklid.vector.PolyLine2D]
@@ -515,6 +529,7 @@ class CellPlotMaker:
     DribPlot = DribPlot
     StrapPlot = StrapPlot
     PanelPlot = PanelPlot
+    MiniRibPlot = MiniRibPlot
 
     def __init__(self, cell: Cell, config: Config | None=None):
         self.cell = cell
@@ -601,3 +616,15 @@ class CellPlotMaker:
             rigidfoils.append(rigidfoil.get_flattened(self.cell))
         
         return rigidfoils
+    
+
+    def get_miniribs(self) -> list[PlotPart]:
+        miniribs = self.cell.miniribs[:]
+        miniribs.sort(key=lambda d: d.name)
+        mribs = []
+        for mrib in miniribs[::-1]:
+            mrib_plot = self.MiniRibPlot(mrib, self.cell, self.config)
+            mribs.append(mrib_plot.flatten())
+            self.consumption += mrib_plot.get_material_usage()
+        
+        return mribs

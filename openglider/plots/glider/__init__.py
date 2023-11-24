@@ -9,6 +9,7 @@ from openglider.utils.config import Config
 from openglider.vector.drawing import Layout
 from openglider.plots.glider.cell import CellPlotMaker as DefaultCellPlotMaker
 from openglider.plots.glider.ribs import RibPlot, SingleSkinRibPlot
+from openglider.plots.glider.minirib import MiniRibPlot
 from openglider.plots.config import PatternConfig
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.vector.drawing.part import PlotPart
@@ -26,12 +27,14 @@ class PlotMaker:
     dribs: PlotPartDict
     straps: PlotPartDict
     rigidfoils: PlotPartDict
+    miniribs: PlotPartDict
 
     DefaultConf: TypeAlias = PatternConfig
     CellPlotMaker: TypeAlias = DefaultCellPlotMaker
     SingleSkinRibPlot = SingleSkinRibPlot
     RibPlot = RibPlot
-
+    MibiRibPlot = MiniRibPlot
+    
     def __init__(self, glider_3d: Glider, config: Config | None=None):
         self.glider_3d = glider_3d.copy()
         self.config = self.DefaultConf(config)
@@ -41,6 +44,7 @@ class PlotMaker:
         self.dribs = collections.OrderedDict()
         self.straps = collections.OrderedDict()
         self.rigidfoils = collections.OrderedDict()
+        self.miniribs = collections.OrderedDict()
         self.extra_parts: list[PlotPart] = []
         self._cellplotmakers: dict[Cell, DefaultCellPlotMaker] = dict()
 
@@ -53,7 +57,8 @@ class PlotMaker:
             "panels": self.panels,
             "extra_parts": self.extra_parts,
             #"dribs": self.dribs,
-            "ribs": self.ribs
+            "ribs": self.ribs,
+            "miniribs": self.miniribs
         }
 
     @classmethod
@@ -80,6 +85,7 @@ class PlotMaker:
         weight = MaterialUsage()
 
         for cell_no, cell in enumerate(self.glider_3d.cells):
+            logger.info(f"Plotting Cell: %s"  % cell_no)
             pm = self._get_cellplotmaker(cell)
             lower = pm.get_panels_lower()
             upper = pm.get_panels_upper()
@@ -173,6 +179,15 @@ class PlotMaker:
             self.rigidfoils[cell] = rigidfoils
         
         return self.rigidfoils
+    
+    def get_miniribs(self) -> PlotPartDict:
+        self.miniribs.clear()
+
+        for cell in self.glider_3d.cells:
+            miniribs = self._get_cellplotmaker(cell).get_miniribs()
+            self.miniribs[cell] = miniribs
+
+        return self.miniribs
 
     def get_all_grouped(self) -> Layout:
         # create x-raster
@@ -192,6 +207,7 @@ class PlotMaker:
         dribs = stack_grid(self.dribs)
         straps = stack_grid(self.straps)
         rigidfoils = stack_grid(self.rigidfoils)
+        miniribs = stack_grid(self.miniribs)
 
         def group(layout: Layout, prefix: str) -> list[Layout]:
             grouped = layout.group_materials()
@@ -208,6 +224,7 @@ class PlotMaker:
         ribs_grouped = group(ribs, "ribs")
         dribs_grouped = group(dribs, "dribs")
         straps_grouped = group(straps, "straps")
+        miniribs_grouped = group(miniribs, "miniribs")
 
 
         panels.add_text("panels_all")
@@ -217,6 +234,7 @@ class PlotMaker:
         all_layouts += ribs_grouped
         all_layouts += dribs_grouped
         all_layouts += straps_grouped
+        all_layouts += miniribs_grouped
 
         if len(rigidfoils.parts):
             rigidfoils.draw_border()
@@ -235,4 +253,5 @@ class PlotMaker:
         self.get_dribs()
         self.get_straps()
         self.get_rigidfoils()
+        self.get_miniribs()
         return self

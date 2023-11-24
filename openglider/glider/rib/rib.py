@@ -249,10 +249,13 @@ class Rib(RibBase):
         
     def get_rigidfoils(self) -> list[RigidFoilBase]:
         if self.sharknose is not None:
-            return self.sharknose.update_rigidfoils(self)
-        
-        return self.rigidfoils
+            rigidfoils = self.sharknose.update_rigidfoils(self)
+            for rigid_no, rigid in enumerate(rigidfoils):
+                rigid.name = self.rigid_naming_scheme.format(rigid_no, rib=self)
+            
+            return rigidfoils
 
+        return self.rigidfoils
 
 
 def rib_rotation(aoa: float, arc: float, zrot: float, xrot: float=0) -> euklid.vector.Transformation:
