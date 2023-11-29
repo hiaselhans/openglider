@@ -312,7 +312,7 @@ class TensionLine(TensionStrap):
     def mirror(self) -> None:
         self.left, self.right = self.right, self.left
 
-    def get_mesh(self, cell: Cell, insert_points: int=10, project_3d: bool=False) -> mesh.Mesh:
+    def get_mesh(self, cell: Cell, insert_points: int=10, project_3d: bool=False, hole_res: int=0) -> mesh.Mesh:
         boundaries = {}
         rib1 = cell.rib1
         rib2 = cell.rib2

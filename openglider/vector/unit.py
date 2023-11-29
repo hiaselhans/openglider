@@ -23,7 +23,7 @@ class Quantity(pydantic.BaseModel):
     unit_variants: ClassVar[dict[str, float]]
     display_unit: str | None = None
 
-    re_number: ClassVar[str] = r"[-+]?\d*(?:\.\d*)?(?:[eE][+-]?\d+)?|\d+"
+    re_number: ClassVar[str] = r"[+-]?(?:(?:\d+\.?\d*)|(?:\.\d+))(?:[eE][+-]?\d+)?|\d+"
     re_unit: ClassVar[str] = r"[\w°%]+)(?!\S"
     re_combined: ClassVar[re.Pattern] = re.compile(f"({re_number})\s*({re_unit})")
 
