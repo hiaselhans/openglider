@@ -1,14 +1,28 @@
-from openglider.glider.parametric.table.base import CellTable, Keyword
-
 import logging
 
+from openglider.glider.parametric.table.base import CellTable, Keyword
+from openglider.glider.parametric.table.base.dto import DTO
+from openglider.glider.parametric.table.base.parser import Parser
+from openglider.glider.cell.ballooning_modifier import BallooningModifier, EntryRamp
+from openglider.vector.unit import Percentage
+
 logger = logging.getLogger(__name__)
+
+
+class BallooningRampDTO(DTO):
+    ramp_distance: Percentage
+
+    def get_object(self) -> EntryRamp:
+        return EntryRamp(ramp_distance=self.ramp_distance)
+
 
 class BallooningTable(CellTable):
     keywords: dict[str, Keyword] = {
         "BallooningFactor": Keyword(attributes=["amount_factor"]),
         "BallooningMerge": Keyword(attributes=["merge_factor"]),
-        "BallooningRamp": Keyword(attributes=["ballooning_ramp"], target_cls=dict)
+    }
+    dtos = {
+        "BallooningRamp": BallooningRampDTO,
     }
 
     def get_merge_factors(self, factor_list: list[float]) -> list[tuple[float, float]]:
@@ -34,13 +48,8 @@ class BallooningTable(CellTable):
         
         return list(zip(merge_factors, multipliers))
     
-    def get_ballooning_ramp(self, row: int) -> float | None:
-        value = self.get_one(row_no=row, keywords=["BallooningRamp"])
-
-        if value is not None:
-            return value["ballooning_ramp"]
-
-        return None
+    def get_modifiers(self, row: int, resolvers: list[Parser]) -> list[BallooningModifier]:
+        return self.get(row_no=row, keywords=["BallooningRamp"], resolvers=resolvers)
 
 
 
