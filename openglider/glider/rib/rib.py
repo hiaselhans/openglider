@@ -267,7 +267,7 @@ def rib_rotation(aoa: float, arc: float, zrot: float, xrot: float=0) -> euklid.v
 
     # rotate arc
     rot2 = euklid.vector.Transformation.rotation(-arc, [1,0,0])  # type: ignore
-    axis = (rot1 * rot2).apply([0,0,1])
+    axis = (rot1 * rot2).apply(euklid.vector.Vector3D([0,0,1]))
     rot3 = euklid.vector.Transformation.rotation(-zrot, axis)  # type: ignore
     
     # reverse order
