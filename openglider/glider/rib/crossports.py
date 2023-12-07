@@ -227,10 +227,11 @@ class MultiSquareHole(RibHoleBase):
     
     def hole_x_values(self, rib: Rib) -> list[Percentage]:
         hole_width = self.hole_width(rib)
+        border_width = rib.convert_to_percentage(self.border_width)
 
         x = self.start + hole_width/2
 
-        return [x + i*(hole_width+self.border_width) for i in range(self.num_holes)]
+        return [x + i*(hole_width+border_width) for i in range(self.num_holes)]
     
     def _get_holes(self, rib: Rib) -> list[RibSquareHole]:
         hole_width = self.hole_width(rib)
