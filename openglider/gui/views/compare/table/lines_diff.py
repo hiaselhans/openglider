@@ -1,6 +1,6 @@
 import logging
 from openglider.glider.project import GliderProject
-from openglider.gui.qt import QtWidgets
+from openglider.gui.qt import QtCore, QtWidgets
 from openglider.gui.qt import QClipboard
 
 from openglider.gui.app.app import GliderApp
@@ -65,26 +65,55 @@ class GliderLineSetTable(QTable, CompareView):
 
     ]
     def __init__(self, app: GliderApp, parent: QtWidgets.QWidget=None):
+        ##ToDO: make cleaner implementation of the button
+
         super().__init__(parent)
-        self.app = app
+
+        self.setLayout(QtWidgets.QHBoxLayout())
+
+        self.main_widget = QtWidgets.QSplitter()
+        self.main_widget.setOrientation(QtCore.Qt.Orientation.Vertical)
+
+        self.splitter = QtWidgets.QSplitter()
+        self.splitter.setOrientation(QtCore.Qt.Orientation.Horizontal)
+
+        self.setLayout(QtWidgets.QHBoxLayout())
+        self.layout().addWidget(self.splitter)
+
+        self.right_widget = QtWidgets.QWidget()
+        self.right_widget.setLayout(QtWidgets.QVBoxLayout())
+
+        self.main_widget = QtWidgets.QWidget()
+        self.main_widget.setLayout(QtWidgets.QVBoxLayout())
+
+        self.button_copy = QtWidgets.QPushButton("Copy Table")
+        self.button_copy.clicked.connect(self.copy)
+
+        self.right_widget.layout().addWidget(self.button_copy)
+
+        self.splitter.addWidget(self.main_widget)
+        self.splitter.addWidget(self.right_widget)
+        self.splitter.setSizes([800, 200])
+
         self.cache = LinesTableCache(app.state.projects)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+
 
     def update_view(self) -> None:
-        table = Table()
+        self.table = Table()
 
-        
         for i, active_project_table in enumerate(self.cache.get_update().active):
-            table.append_right(active_project_table)
+            self.table.append_right(active_project_table)
         
         self.clear()
-        self.push_table(table)
+        self.push_table(self.table)
         self.resizeColumnsToContents()
 
-        #add contents of table to clipboard, todo: make a button for this.
+
+    def copy(self) -> None:
+        #add contents of table to clipboard.
         copied = ''
-        for row in range(0, table.num_rows):
-            for col in range(0, table.num_columns):
+        for row in range(0, self.table.num_rows):
+            for col in range(0, self.table.num_columns):
                 copied += self.item(row, col).text() + '\t'
             copied = copied[:-1] + '\n'
 

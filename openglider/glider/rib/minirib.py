@@ -187,13 +187,7 @@ class MiniRib:
 
     def align_all(self, cell: Cell, data: euklid.vector.PolyLine2D) -> euklid.vector.PolyLine3D:
         """align 2d coordinates to the 3d pos of the minirib"""
-
-        #rib1 = cell.rib1
-        #rib2 = cell.rib2 #midrib(self.yvalue, True)
-
         projection_plane: euklid.plane.Plane = self.get_3d(cell).projection_layer
-
-        #data = self.get_flattened(cell).nodes
 
         nodes_3d = []
         
@@ -201,15 +195,6 @@ class MiniRib:
             nodes_3d.append(
                 projection_plane.p0 + projection_plane.x_vector * p[0] + projection_plane.y_vector * p[1]
             )
-
-
-
-        # ToDo: not correct as ribs are not parallel
-
-        #if scale:
-        #    return ((rib1.transformation.apply(data)).mix((rib2.transformation.apply(data)),self.yvalue))
-        #else:
-        #    return (rib1.rotation_matrix.apply(data).move(rib1.pos)).mix((rib2.rotation_matrix.apply(data).move(rib2.pos)),self.yvalue)
         
         return nodes_3d
 
