@@ -66,8 +66,9 @@ class MiniRib:
             return 1.
 
     def get_3d(self, cell: Cell) -> Profile3D:
-        shape_with_bal = cell.basic_cell.midrib(self.yvalue, True).curve.nodes
+        shape_with_bal = cell.basic_cell.midrib(self.yvalue, True, arc_argument=False).curve.nodes
         shape_wo_bal = cell.basic_cell.midrib(self.yvalue, False).curve.nodes
+
 
         points: list[euklid.vector.Vector3D] = []
         for xval, with_bal, without_bal in zip(
@@ -141,7 +142,6 @@ class MiniRib:
         profile = self.get_3d(cell).flatten()
         contour = profile.curve
 
-
         start_bot = profile.get_ik(self.front_cut*profile.curve.nodes[0][0])
         end_bot = profile.get_ik(profile.curve.nodes[0][0])
         start_top = profile.get_ik(-self.front_cut*profile.curve.nodes[0][0])
@@ -180,24 +180,38 @@ class MiniRib:
            of a Polyline"""
         
         nodes_top, nodes_bottom, length_on_panel, correction_factor = self.get_nodes(cell)
-        nodes= euklid.vector.PolyLine2D(nodes_top+nodes_bottom)
+        nodes = euklid.vector.PolyLine2D(nodes_top+nodes_bottom) #* euklid.vector.Vector2D([correction_factor, 1.])
 
         return openglider.airfoil.Profile2D(nodes)
     
 
-    def align_all(self, cell: Cell, data: euklid.vector.PolyLine2D, scale: bool=False) -> euklid.vector.PolyLine3D:
+    def align_all(self, cell: Cell, data: euklid.vector.PolyLine2D) -> euklid.vector.PolyLine3D:
         """align 2d coordinates to the 3d pos of the minirib"""
 
-        rib1 = cell.rib1
-        rib2 = cell.rib2 #midrib(self.yvalue, True)
+        #rib1 = cell.rib1
+        #rib2 = cell.rib2 #midrib(self.yvalue, True)
+
+        projection_plane: euklid.plane.Plane = self.get_3d(cell).projection_layer
+
+        #data = self.get_flattened(cell).nodes
+
+        nodes_3d = []
+        
+        for p in data:
+            nodes_3d.append(
+                projection_plane.p0 + projection_plane.x_vector * p[0] + projection_plane.y_vector * p[1]
+            )
+
+
 
         # ToDo: not correct as ribs are not parallel
 
-        if scale:
-            return ((rib1.transformation.apply(data)).mix((rib2.transformation.apply(data)),self.yvalue))
-        else:
-            return (rib1.rotation_matrix.apply(data).move(rib1.pos)).mix((rib2.rotation_matrix.apply(data).move(rib2.pos)),self.yvalue)
-    
+        #if scale:
+        #    return ((rib1.transformation.apply(data)).mix((rib2.transformation.apply(data)),self.yvalue))
+        #else:
+        #    return (rib1.rotation_matrix.apply(data).move(rib1.pos)).mix((rib2.rotation_matrix.apply(data).move(rib2.pos)),self.yvalue)
+        
+        return nodes_3d
 
     def get_mesh(self, cell: Cell, filled: bool=True, max_area: float=None) -> Mesh:
 
@@ -219,10 +233,10 @@ class MiniRib:
             mesh = tri.triangulate()
 
             points = self.align_all(cell, euklid.vector.PolyLine2D(mesh.points))
-            boundaries = {self.name: list(range(len(mesh.points)))}
+            boundaries = {self.name: list(range(len(points)))}
 
 
-            minirib_mesh = Mesh.from_indexed(points.nodes, polygons={"miniribs": [(tri, {}) for tri in mesh.elements]} , boundaries=boundaries)
+            minirib_mesh = Mesh.from_indexed(points, polygons={"miniribs": [(tri, {}) for tri in mesh.elements]} , boundaries=boundaries)
             
             #for hole in self.holes:
             #    if hole_mesh := hole.get_mesh(self):
