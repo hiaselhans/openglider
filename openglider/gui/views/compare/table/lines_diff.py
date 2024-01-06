@@ -96,7 +96,7 @@ class GliderLineSetTable(QTable, CompareView):
         self.splitter.setSizes([800, 200])
 
         self.cache = LinesTableCache(app.state.projects)
-
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
 
     def update_view(self) -> None:
         self.table = Table()

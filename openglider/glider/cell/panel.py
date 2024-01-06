@@ -306,7 +306,7 @@ class Panel(BaseModel):
             # todo: return polygon-data
         return ribs
 
-    def  get_mesh(self, cell: Cell, numribs: int=0, exact: bool=False, tri: bool=False) -> mesh.Mesh:
+    def get_mesh(self, cell: Cell, numribs: int=0, exact: bool=False, tri: bool=False) -> mesh.Mesh:
         """
         Get Panel-mesh
         :param cell: the parent cell of the panel
