@@ -85,7 +85,7 @@ class PlotMaker:
         weight = MaterialUsage()
 
         for cell_no, cell in enumerate(self.glider_3d.cells):
-            logger.info(f"Plotting Cell: %s"  % cell_no)
+            logger.info(f"Plotting Cell: {cell_no}")
             pm = self._get_cellplotmaker(cell)
             lower = pm.get_panels_lower()
             upper = pm.get_panels_upper()

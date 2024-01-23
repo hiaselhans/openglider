@@ -88,8 +88,6 @@ class PatternsNew:
         return drawings
     
     def _get_plotfile(self) -> Layout:
-        glider = self.project.glider_3d
-
         if self.config.complete_glider:
             glider = self.project.get_glider_3d().copy_complete()
             glider.rename_parts()
