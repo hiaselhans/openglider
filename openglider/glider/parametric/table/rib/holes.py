@@ -85,13 +85,9 @@ class HOLEATP6(HOLEATP5):
 class HOLEATP7(HOLEATP6):
     offset: Percentage
 
-
 class HOLEATP11(HoleATP):
-    start: Percentage
-    end: Percentage
     offset_top: Percentage
     offset_bottom: Percentage
-    num_holes: int
     skip_holes: int
     num_tri_hole_front: int
     num_tri_hole_back: int
