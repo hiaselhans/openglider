@@ -31,7 +31,7 @@ class PatternConfigOld(Config):
     allowance_parallel = 0.01
     allowance_orthogonal = 0.01
     allowance_diagonals = 0.01
-    allowance_trailing_edge = 0.015
+    allowance_trailing_edge = 0.01
     allowance_entry_open = 0.015
 
     insert_design_cuts = False
