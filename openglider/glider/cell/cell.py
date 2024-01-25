@@ -12,6 +12,7 @@ import pyfoil
 from openglider.airfoil import Profile3D
 from openglider.glider.ballooning.base import BallooningBase
 from openglider.glider.cell.attachment_point import CellAttachmentPoint
+from openglider.glider.cell.ballooning_modifier import BallooningModifier
 from openglider.glider.cell.basic_cell import BasicCell
 from openglider.glider.cell.diagonals import DiagonalRib, TensionStrap
 from openglider.glider.cell.panel import PANELCUT_TYPES, Panel, PanelCut
@@ -43,7 +44,7 @@ class Cell(BaseModel):
     rigidfoils: list[PanelRigidFoil] = Field(default_factory=list)
     name: str = "unnamed"
 
-    ballooning_ramp: float | None = None
+    ballooning_modifiers: list[BallooningModifier] = Field(default_factory=list)
     sigma_3d_cut: float = 0.06
 
     diagonal_naming_scheme: ClassVar[str] = "{cell.name}d{diagonal_no}"
@@ -60,7 +61,8 @@ class Cell(BaseModel):
         if seperate_upper_lower:
             upper = [panel for panel in self.panels if not panel.is_lower()]
             lower = [panel for panel in self.panels if panel.is_lower()]
-            sort_func = lambda panel: abs(panel.mean_x())
+            def sort_func(panel: Panel) -> float:
+                return abs(panel.mean_x())
             upper.sort(key=sort_func)
             lower.sort(key=sort_func)
 
@@ -276,37 +278,12 @@ class Cell(BaseModel):
     
     @cached_property('ballooning', 'rib1.profile_2d.x_values', 'rib2.profile_2d.x_values', 'panels')
     def ballooning_modified(self) -> BallooningBase:
-        if self.ballooning_ramp is None:
+        if self.ballooning_modifiers is None or not len(self.ballooning_modifiers):
             return self.ballooning
-        else:
-            ballooning_ramp = self.ballooning_ramp
-
-        panels = self.get_connected_panels()
-        cuts = set[float]()
-
-        for p in panels:
-            x1 = max([p.cut_front.x_left, p.cut_front.x_right])
-            x2 = min([p.cut_back.x_left, p.cut_back.x_right])
-
-            for x in (x1, x2):
-                if abs(x) < (1 - 1e-10):
-                    cuts.add(float(x))
         
         ballooning = self.ballooning
-        from openglider.glider.ballooning.new import BallooningNew
-        for cut in cuts:
-            def y(x: euklid.vector.Vector2D) -> euklid.vector.Vector2D:
-                distance = abs(x[0]-cut)
-                y_new = x[1]
-
-                if distance <= ballooning_ramp:
-                    y_new *= -(math.cos(distance / ballooning_ramp * math.pi) - 1) / 2
-                
-                    return euklid.vector.Vector2D([x[0], y_new])
-                
-                return x
-
-            ballooning = BallooningNew(euklid.vector.Interpolation([y(x) for x in ballooning]), ballooning.name)
+        for modifier in self.ballooning_modifiers:
+            ballooning = modifier.apply(ballooning, self)
         
         return ballooning
 
@@ -516,12 +493,13 @@ class Cell(BaseModel):
             d_r = (midribs[-1][i] - midribs[-1][i+1]).length()
             l_0 = get_length(i, i)
 
-            if False:
-                pr_2 = get_point(p2, pl_2, get_length(i+1, i), d_r, get_length(i+1, i+1), left=False)
-                pl_2 = get_point(p1, p2, l_0, d_l, get_length(i+1, i))
-            else:
-                pr_2 = get_point(p2, p1, l_0, d_r, get_length(i, i+1), left=False)
-                pl_2 = get_point(p1, pr_2, get_length(i, i+1), d_l, get_length(i+1, i+1))
+            #if False:
+            #    pr_2 = get_point(p2, pl_2, get_length(i+1, i), d_r, get_length(i+1, i+1), left=False)
+            #    pl_2 = get_point(p1, p2, l_0, d_l, get_length(i+1, i))
+            #else:
+            
+            pr_2 = get_point(p2, p1, l_0, d_r, get_length(i, i+1), left=False)
+            pl_2 = get_point(p1, pr_2, get_length(i, i+1), d_l, get_length(i+1, i+1))
 
             left_bal.append(pl_2)
             right_bal.append(pr_2)

@@ -137,7 +137,7 @@ class MiniRib:
         #3D shaping cut does not seem to be taken into account
 
 
-    def get_nodes(self, cell: Cell) -> euklid.vector.PolyLine2D:
+    def get_nodes(self, cell: Cell) -> tuple[euklid.vector.PolyLine2D, euklid.vector.PolyLine2D, float, float]:
 
         profile = self.get_3d(cell).flatten()
         contour = profile.curve

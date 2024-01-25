@@ -110,9 +110,14 @@ class PanelPlot:
         cut_front_result = self.cut_front.apply(inner_front, outer_left, outer_right, shape_3d_amount_front)
         cut_back_result = self.cut_back.apply(inner_back, outer_left, outer_right, shape_3d_amount_back)
 
-        panel_left = outer_left.get(cut_front_result.index_left, cut_back_result.index_left).fix_errors()
+        panel_left: euklid.vector.PolyLine2D | None = None
+        if cut_front_result.index_left < cut_back_result.index_left:
+            panel_left = outer_left.get(cut_front_result.index_left, cut_back_result.index_left).fix_errors()
         panel_back = cut_back_result.curve.copy()
-        panel_right = outer_right.get(cut_back_result.index_right, cut_front_result.index_right).fix_errors()
+
+        panel_right: euklid.vector.PolyLine2D | None = None
+        if cut_back_result.index_right > cut_front_result.index_right:
+            panel_right = outer_right.get(cut_back_result.index_right, cut_front_result.index_right).fix_errors()
         panel_front = cut_front_result.curve.copy()
 
         # spitzer schnitt
@@ -143,11 +148,11 @@ class PanelPlot:
 
         panel_back = panel_back.get(len(panel_back)-1, 0)
         if panel_right:
-            panel_right = panel_right.reverse()
+            envelope = panel_right.reverse() + panel_back
+        else:
+            envelope = panel_back
 
-
-        envelope = panel_right + panel_back
-        if len(panel_left) > 0:
+        if panel_left:
             envelope += panel_left.reverse()
         envelope += panel_front
         envelope += euklid.vector.PolyLine2D([envelope.nodes[0]])

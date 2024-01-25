@@ -25,9 +25,8 @@ logger = logging.getLogger(__name__)
 
 def proj_force(force: euklid.vector.Vector3D, vec: euklid.vector.Vector3D) -> float | None:
     projection = vec.dot(force)
-    try:
-        assert projection**2 >= 0.00001
-    except AssertionError:
+    
+    if projection**2 < 0.00001:
         logger.warning(f"singular force projection: direction: {vec}, force: {force} => {projection}")
         return None
     return force.dot(force) / projection
