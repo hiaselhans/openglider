@@ -258,19 +258,29 @@ class MultiSquareHole(RibHoleBase):
 class AttachmentPointHole(RibHoleBase):
     start: Percentage
     end: Percentage
-
     num_holes: int
     border: Length | Percentage=Length(0.1)
     side_border: Length | Percentage=Length(0.1)
     corner_size: Percentage = Percentage(1.)
 
+    offset: Percentage=Percentage(0)
+
+    offset_top: Percentage=Percentage(0)
+    offset_bottom: Percentage=Percentage(0)
+    skip_holes: int | None=None
+    num_tri_hole_front: int=int(0)
+    num_tri_hole_back: int=int(0)
+
     @cached_function('self')
-    def _get_holes(self, rib: Rib) -> list[PolygonHole]:
+    def _get_holes_bottom(self, rib: Rib) -> list[PolygonHole]:
         envelope = self.get_envelope_airfoil(rib)
 
-        p1 = envelope.align([self.start, -1])
-        p2 = envelope.align([(self.start+self.end)/2, 1])
-        p3 = envelope.align([self.end, -1])
+        offset= euklid.vector.Vector2D([0, self.offset])
+
+
+        p1 = envelope.align([self.start, -1]) +offset
+        p2 = envelope.align([(self.start+self.end)/2, 1]) + offset
+        p3 = envelope.align([self.end, -1]) +offset
 
         upper = euklid.vector.Interpolation([p1, p2, p3])
         lower = euklid.vector.Interpolation([p1, p3])
@@ -300,17 +310,83 @@ class AttachmentPointHole(RibHoleBase):
             holes.append(PolygonHole(points=[p1, p2, p3, p4], corner_size=self.corner_size.si))
         
         return holes
+    
+    @cached_function('self')
+    def _get_holes_top(self, rib: Rib) -> list[PolygonHole]:
+        envelope = self.get_envelope_airfoil(rib)
+
+        p1 = envelope.align([self.start, 1])
+        p2 = envelope.align([(self.start+self.end)/2, 1])   #envelope.align([self.center, -1])
+        p3 = envelope.align([self.end, 1])
+        p4 = envelope.align([self.start, -1])
+        p5 = envelope.align([self.end, -1])
+
+        offset_top = euklid.vector.Vector2D([0, self.offset_top])
+        offset_bottom = euklid.vector.Vector2D([0, self.offset_bottom])
+        
+
+        p1 += offset_top
+        p3 += offset_top
+        p2 += offset_bottom /4
+        p4 += offset_bottom
+        p5 += offset_bottom /2
+
+        upper = euklid.vector.Interpolation([p1, p3])
+        lower = euklid.vector.Interpolation([p4, p2, p5])
+
+        side_border_pct = rib.convert_to_percentage(self.side_border)
+        border_pct = rib.convert_to_percentage(self.border)
+
+        total_border_pct = (2*side_border_pct + (self.num_holes-1)*border_pct)
+
+        hole_width  = (Percentage(float(abs(self.start-self.end))) - total_border_pct)/self.num_holes
+
+        if hole_width < 0:
+            raise ValueError(f"not enough space for {self.num_holes} holes between {self.start} / {self.end} ({rib.name})")
+
+        holes = []
+
+        for hole_no in range(self.num_holes):
+            left = self.start + side_border_pct + hole_no*border_pct + hole_no*hole_width
+            right = left + hole_width
+            if  ((self.num_holes-1)//2) <= hole_no <=  (self.num_holes//2 +self.skip_holes-1): continue
+
+            if hole_no < self.num_tri_hole_front:
+                left_bot = left 
+                right_bot = left_bot+0.015
+            elif hole_no > self.num_holes - self.num_tri_hole_back-1:
+                right_bot = right
+                left_bot = right_bot-0.015
+            else :
+                left_bot = left
+                right_bot = right
+
+            p1 = euklid.vector.Vector2D([left_bot, lower.get_value(left.si)])
+            p2 = euklid.vector.Vector2D([right_bot, lower.get_value(right.si)])
+            
+            p4 = euklid.vector.Vector2D([left, upper.get_value(left.si)])
+            p3 = euklid.vector.Vector2D([right, upper.get_value(right.si)])
+
+            holes.append(PolygonHole(points=[p1, p2, p3, p4], corner_size=self.corner_size.si))
+        
+        return holes
 
     def _get_curves(self, rib: Rib, num: int=80) -> list[euklid.vector.PolyLine2D]:
         curves = []
-        for hole in self._get_holes(rib):
+        for hole in self._get_holes_bottom(rib):
             curves += hole.get_curves(rib, num)
-        
+        if not self.skip_holes == None:    
+            for hole in self._get_holes_top(rib):
+                curves += hole.get_curves(rib, num)
+
         return curves
 
     def get_centers(self, rib: Rib, scale: bool=False) -> list[euklid.vector.Vector2D]:
         holes = []
-        for hole in self._get_holes(rib):
+        for hole in self._get_holes_bottom(rib):
             holes += hole.get_centers(rib, scale=scale)
-        
+        if not self.skip_holes == None:    
+            for hole in self._get_holes_top(rib):
+                holes += hole.get_centers(rib, scale=scale)
+
         return holes

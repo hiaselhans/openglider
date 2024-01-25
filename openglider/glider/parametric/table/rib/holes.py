@@ -2,7 +2,6 @@ from openglider.glider.parametric.table.base import RibTable
 from openglider.glider.parametric.table.base.dto import DTO
 
 from openglider.glider.rib.crossports import RibHole, RibSquareHole, MultiSquareHole, AttachmentPointHole
-
 import logging
 
 from openglider.vector.unit import Angle, Length, Percentage
@@ -83,6 +82,23 @@ class HOLEATP5(HoleATP):
 class HOLEATP6(HOLEATP5):
     corner_size: Percentage
 
+class HOLEATP7(HOLEATP6):
+    offset: Percentage
+
+
+class HOLEATP11(HoleATP):
+    start: Percentage
+    end: Percentage
+    offset_top: Percentage
+    offset_bottom: Percentage
+    num_holes: int
+    skip_holes: int
+    num_tri_hole_front: int
+    num_tri_hole_back: int
+    border: Length | Percentage
+    side_border: Length | Percentage
+    corner_size: Percentage
+
 
 class HolesTable(RibTable):
     dtos = {
@@ -95,4 +111,6 @@ class HolesTable(RibTable):
         "HOLEATP": HoleATP,
         "HOLEATP5": HOLEATP5,
         "HOLEATP6": HOLEATP6,
+        "HOLEATP7": HOLEATP7,
+        "HOLEATP11": HOLEATP11
     }
