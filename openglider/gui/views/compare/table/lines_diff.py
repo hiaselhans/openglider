@@ -60,7 +60,7 @@ class LinesTableCache(GliderCache[Table]):
         return table
 
 
-class GliderLineSetTable(QTable, CompareView):
+class GliderLineSetTable(QtWidgets.QWidget, CompareView):
     row_indices: list[str] = [
 
     ]
@@ -69,31 +69,14 @@ class GliderLineSetTable(QTable, CompareView):
 
         super().__init__(parent)
 
-        self.setLayout(QtWidgets.QHBoxLayout())
+        layout = QtWidgets.QVBoxLayout()
+        self.setLayout(layout)
+        self.table_widget = QTable()
+        layout.addWidget(self.table_widget)
+        button_copy = QtWidgets.QPushButton("Copy Table")
+        layout.addWidget(button_copy)
+        button_copy.clicked.connect(self.copy_to_clipboard)
 
-        self.main_widget = QtWidgets.QSplitter()
-        self.main_widget.setOrientation(QtCore.Qt.Orientation.Vertical)
-
-        self.splitter = QtWidgets.QSplitter()
-        self.splitter.setOrientation(QtCore.Qt.Orientation.Horizontal)
-
-        self.setLayout(QtWidgets.QHBoxLayout())
-        self.layout().addWidget(self.splitter)
-
-        self.right_widget = QtWidgets.QWidget()
-        self.right_widget.setLayout(QtWidgets.QVBoxLayout())
-
-        self.main_widget = QtWidgets.QWidget()
-        self.main_widget.setLayout(QtWidgets.QVBoxLayout())
-
-        self.button_copy = QtWidgets.QPushButton("Copy Table")
-        self.button_copy.clicked.connect(self.copy)
-
-        self.right_widget.layout().addWidget(self.button_copy)
-
-        self.splitter.addWidget(self.main_widget)
-        self.splitter.addWidget(self.right_widget)
-        self.splitter.setSizes([800, 200])
 
         self.cache = LinesTableCache(app.state.projects)
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
@@ -104,17 +87,17 @@ class GliderLineSetTable(QTable, CompareView):
         for i, active_project_table in enumerate(self.cache.get_update().active):
             self.table.append_right(active_project_table)
         
-        self.clear()
-        self.push_table(self.table)
-        self.resizeColumnsToContents()
+        self.table_widget.clear()
+        self.table_widget.push_table(self.table)
+        self.table_widget.resizeColumnsToContents()
 
 
-    def copy(self) -> None:
+    def copy_to_clipboard(self) -> None:
         #add contents of table to clipboard.
         copied = ''
         for row in range(0, self.table.num_rows):
             for col in range(0, self.table.num_columns):
-                copied += self.item(row, col).text() + '\t'
+                copied += self.table_widget.item(row, col).text() + '\t'
             copied = copied[:-1] + '\n'
 
         clipboard = QClipboard()

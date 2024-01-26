@@ -66,7 +66,7 @@ class MiniRib:
             return 1.
 
     def get_3d(self, cell: Cell) -> Profile3D:
-        shape_with_bal = cell.basic_cell.midrib(self.yvalue, True, arc_argument=False).curve.nodes
+        shape_with_bal = cell.basic_cell.midrib(self.yvalue, True, arc_argument=True).curve.nodes
         shape_wo_bal = cell.basic_cell.midrib(self.yvalue, False).curve.nodes
 
 
