@@ -270,6 +270,7 @@ class AttachmentPointHole(RibHoleBase):
     skip_holes: int | None=None
     num_tri_hole_front: int=int(0)
     num_tri_hole_back: int=int(0)
+    offset_first_top_holes: Percentage=Percentage(0)
 
     @cached_function('self')
     def _get_holes_bottom(self, rib: Rib) -> list[PolygonHole]:
@@ -351,6 +352,13 @@ class AttachmentPointHole(RibHoleBase):
             right = left + hole_width
             if  ((self.num_holes-1)//2) <= hole_no <=  (self.num_holes//2 +self.skip_holes-1): continue
 
+            if hole_no == 0:
+                left -= self.offset_first_top_holes
+                right -= self.offset_first_top_holes
+            if hole_no == self.num_holes-1:
+                left += self.offset_first_top_holes
+                right += self.offset_first_top_holes
+            
             if hole_no < self.num_tri_hole_front:
                 left_bot = left 
                 right_bot = left_bot+0.015

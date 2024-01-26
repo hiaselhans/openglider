@@ -85,9 +85,10 @@ class HOLEATP6(HOLEATP5):
 class HOLEATP7(HOLEATP6):
     offset: Percentage
 
-class HOLEATP11(HoleATP):
+class HOLEATP12(HoleATP):
     offset_top: Percentage
     offset_bottom: Percentage
+    offset_first_top_holes: Percentage
     skip_holes: int
     num_tri_hole_front: int
     num_tri_hole_back: int
@@ -108,5 +109,5 @@ class HolesTable(RibTable):
         "HOLEATP5": HOLEATP5,
         "HOLEATP6": HOLEATP6,
         "HOLEATP7": HOLEATP7,
-        "HOLEATP11": HOLEATP11
+        "HOLEATP12": HOLEATP12
     }
