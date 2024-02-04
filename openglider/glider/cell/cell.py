@@ -162,7 +162,7 @@ class Cell(BaseModel):
     def _make_profile3d_from_minirib(self, minirib: MiniRib) -> Profile3D:
         # self.basic_cell.prof1 = self.prof1
         # self.basic_cell.prof2 = self.prof2
-        shape_with_ballooning = self.basic_cell.midrib(minirib.yvalue, ballooning=True, arc_argument=False).curve.nodes
+        shape_with_ballooning = self.basic_cell.midrib(minirib.yvalue, ballooning=True, arc_argument=True).curve.nodes
         shape_without_ballooning = self.basic_cell.midrib(minirib.yvalue, ballooning=False).curve.nodes
         points: list[euklid.vector.Vector3D] = []
         for xval, with_bal, without_bal in zip(
