@@ -3,16 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import euklid
 import logging
-import numpy as np
 
 import pyfoil
 
 import openglider.airfoil
-from openglider.glider.rib import Rib
 
 from openglider.airfoil import Profile3D
 from openglider.utils.dataclass import dataclass, Field
-from openglider.utils.cache import cached_function, cached_property
 
 from openglider.mesh import Mesh, triangulate
 
@@ -102,7 +99,7 @@ class MiniRib:
         else:
             back_cut = self.back_cut
 
-        if is_lower == True:
+        if is_lower is True:
             ik_front_bot = (cell.rib1.profile_2d(self.front_cut) + cell.rib2.profile_2d(self.front_cut))/2
             ik_back_bot = (cell.rib1.profile_2d(back_cut) + cell.rib2.profile_2d(back_cut))/2
 
@@ -164,7 +161,7 @@ class MiniRib:
 
         nodes_top, nodes_bottom, length_on_panel, correction_factor = self.get_nodes(cell)
 
-        logger.info(f"Minirib correction_factor: %s" %correction_factor)
+        logger.info(f"Minirib correction_factor: {correction_factor}")
 
         return_nodes_top = nodes_top * euklid.vector.Vector2D([correction_factor, 1.])
         return_nodes_bottom = nodes_bottom * euklid.vector.Vector2D([correction_factor, 1.])
@@ -208,7 +205,11 @@ class MiniRib:
             segments = []
             for lst in boundary:
                 segments += triangulate.Triangulation.get_segments(lst)
-            return Mesh.from_indexed(self.align_all(cell, euklid.vector.PolyLine2D(vertices)).nodes, {'minirib': [(l, {}) for l in segments]}, {})
+            return Mesh.from_indexed(
+                self.align_all(cell, euklid.vector.PolyLine2D(vertices)).nodes,
+                {'minirib': [(segment, {}) for segment in segments]},
+                {}
+            )
         else:
             tri = triangulate.Triangulation(vertices, boundary, hole_centers)
             if max_area is not None:

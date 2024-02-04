@@ -42,7 +42,7 @@ _type_cache: dict[type[DTO], list[tuple[str, str]]] = {}
 class DTO(BaseModel, Generic[ReturnType], abc.ABC):
     model_config = pydantic.ConfigDict(
         arbitrary_types_allowed=True,
-        extra=pydantic.Extra.forbid
+        extra="forbid"
         )
     _types: list[tuple[str, str]] | None = None
 

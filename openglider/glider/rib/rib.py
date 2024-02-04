@@ -215,7 +215,11 @@ class Rib(RibBase):
             segments = []
             for lst in boundary:
                 segments += triangulate.Triangulation.get_segments(lst)
-            return Mesh.from_indexed(self.align_all(euklid.vector.PolyLine2D(vertices)).nodes, {'rib': [(l, {}) for l in segments]}, {})
+            return Mesh.from_indexed(
+                self.align_all(euklid.vector.PolyLine2D(vertices)).nodes,
+                {'rib': [(segment, {}) for segment in segments]},
+                {}
+                )
         else:
             tri = triangulate.Triangulation(vertices, boundary, hole_centers)
             if max_area is not None:

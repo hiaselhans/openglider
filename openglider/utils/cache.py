@@ -148,7 +148,7 @@ def cached_function(*hashlist: str, exclude: list[str | None]=None, generator: C
                 hashvalue = hash_list(cls_hash, *args, *kwargs.values())
 
                 value = cache.get(hashvalue)
-                if value is None:
+                if value is None or not openglider.config.caching:
                     value = getter(self, *args, **kwargs)
                     cache.set(hashvalue, value)
                 
