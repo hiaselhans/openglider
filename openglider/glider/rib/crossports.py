@@ -24,6 +24,7 @@ class RibHoleBase(BaseModel):
     name: str = "unnamed"
     margin: Percentage | Length= Percentage("2%")
 
+    @cached_function('margin')
     def get_envelope_airfoil(self, rib: Rib) -> pyfoil.Airfoil:
         return rib.get_offset_outline(self.margin)
     
@@ -227,10 +228,11 @@ class MultiSquareHole(RibHoleBase):
     
     def hole_x_values(self, rib: Rib) -> list[Percentage]:
         hole_width = self.hole_width(rib)
+        border_width = rib.convert_to_percentage(self.border_width)
 
         x = self.start + hole_width/2
 
-        return [x + i*(hole_width+self.border_width) for i in range(self.num_holes)]
+        return [x + i*(hole_width+border_width) for i in range(self.num_holes)]
     
     def _get_holes(self, rib: Rib) -> list[RibSquareHole]:
         hole_width = self.hole_width(rib)
@@ -259,39 +261,73 @@ class AttachmentPointHole(RibHoleBase):
     start: Percentage
     end: Percentage
     num_holes: int
-    border: Length | Percentage=Length(0.1)
-    side_border: Length | Percentage=Length(0.1)
+    border: Length | Percentage=Length("4cm")
+    border_side: Length | Percentage=Length("4cm")
+    border_diagonal: Length | Percentage = Length("1cm")
     corner_size: Percentage = Percentage(1.)
 
-    offset: Percentage=Percentage(0)
+    top_holes: bool = False
+    min_hole_height: Length = Length("2cm")
 
-    offset_top: Percentage=Percentage(0)
-    offset_bottom: Percentage=Percentage(0)
-    skip_holes: int | None=None
-    num_tri_hole_front: int=int(0)
-    num_tri_hole_back: int=int(0)
-    offset_first_top_holes: Percentage=Percentage(0)
+    def fit_holes(self, hole_positions: list[tuple[Percentage, Percentage]], upper: euklid.vector.Interpolation, lower: euklid.vector.Interpolation) -> list[PolygonHole]:
+        holes = []
+
+        start = min([p[0] for p in upper.nodes + lower.nodes])
+        end = max([p[0] for p in upper.nodes + lower.nodes])
+
+        # todo: find measure
+        def get_nodes(x: Percentage) -> list[euklid.vector.Vector2D]:
+            x_normalized = max(start, min(end, x.si))
+            upper_y = upper.get_value(x_normalized)
+            lower_y = lower.get_value(x_normalized)
+            if abs(upper_y - lower_y) < self.min_hole_height:
+                return [
+                    euklid.vector.Vector2D([x_normalized, (upper_y+lower_y)/2])
+                ]
+            else:
+                return [
+                    euklid.vector.Vector2D([x_normalized, upper_y]),
+                    euklid.vector.Vector2D([x_normalized, lower_y])
+                ]
+
+        for hole_start, hole_end in hole_positions:
+            if hole_end < start or hole_start > end:
+                continue
+            points = get_nodes(hole_start) + get_nodes(hole_end)[::-1]
+
+            if len(points) > 2:
+                holes.append(PolygonHole(points=points, corner_size=self.corner_size.si))
+
+        return holes
+
 
     @cached_function('self')
     def _get_holes_bottom(self, rib: Rib) -> list[PolygonHole]:
         envelope = self.get_envelope_airfoil(rib)
+        lower_envelope = envelope.curve.get(envelope.noseindex, len(envelope.curve.nodes))
 
-        offset= euklid.vector.Vector2D([0, self.offset])
+        diagonal_border = rib.convert_to_percentage(self.border_diagonal).si
+        side_border_pct = rib.convert_to_percentage(self.border_side)
 
+        upper_1 = envelope.align([self.start, -1])
+        upper_2 = envelope.align([(self.start+self.end)/2, 1])
+        upper_3 = envelope.align([self.end, -1])
 
-        p1 = envelope.align([self.start, -1]) +offset
-        p2 = envelope.align([(self.start+self.end)/2, 1]) + offset
-        p3 = envelope.align([self.end, -1]) +offset
+        upper_with_border = euklid.vector.PolyLine2D([upper_1, upper_2, upper_3]).offset(diagonal_border)
+        cut_front = lower_envelope.cut(upper_with_border.nodes[0], upper_with_border.nodes[1])[0]
+        cut_end = lower_envelope.cut(upper_with_border.nodes[1], upper_with_border.nodes[2], cut_front[0])
 
-        upper = euklid.vector.Interpolation([p1, p2, p3])
-        lower = euklid.vector.Interpolation([p1, p3])
+        lower = euklid.vector.Interpolation(lower_envelope.get(cut_front[0], cut_end[0]).nodes)
+        upper = euklid.vector.Interpolation(upper_with_border.get(cut_front[1], 1+cut_end[1]).nodes)
 
-        side_border_pct = rib.convert_to_percentage(self.side_border)
         border_pct = rib.convert_to_percentage(self.border)
 
         total_border_pct = (2*side_border_pct + (self.num_holes-1)*border_pct)
 
-        hole_width  = (Percentage(float(abs(self.start-self.end))) - total_border_pct)/self.num_holes
+        start = Percentage(lower.nodes[0][0])
+        end = Percentage(lower.nodes[-1][0])
+
+        hole_width  = ((self.end - self.start) - total_border_pct)/self.num_holes
 
         if hole_width < 0:
             raise ValueError(f"not enough space for {self.num_holes} holes between {self.start} / {self.end} ({rib.name})")
@@ -299,43 +335,74 @@ class AttachmentPointHole(RibHoleBase):
         holes = []
 
         for hole_no in range(self.num_holes):
-            left = self.start + side_border_pct + hole_no*border_pct + hole_no*hole_width
-            right = left + hole_width
+            hole_left = self.start + side_border_pct + hole_no*border_pct + hole_no*hole_width
+            hole_right = hole_left + hole_width
 
-            p1 = euklid.vector.Vector2D([left, lower.get_value(left.si)])
-            p2 = euklid.vector.Vector2D([right, lower.get_value(right.si)])
-            
-            p4 = euklid.vector.Vector2D([left, upper.get_value(left.si)])
-            p3 = euklid.vector.Vector2D([right, upper.get_value(right.si)])
+            holes.append((
+                max(hole_left, start),
+                min(hole_right, end)
+            ))
 
-            holes.append(PolygonHole(points=[p1, p2, p3, p4], corner_size=self.corner_size.si))
         
-        return holes
+        return self.fit_holes(holes, upper, lower)
     
     @cached_function('self')
     def _get_holes_top(self, rib: Rib) -> list[PolygonHole]:
         envelope = self.get_envelope_airfoil(rib)
+        diagonal_border = rib.convert_to_percentage(self.border_diagonal).si
+        side_border_pct = rib.convert_to_percentage(self.border_side)
 
-        p1 = envelope.align([self.start, 1])
-        p2 = envelope.align([(self.start+self.end)/2, 1])   #envelope.align([self.center, -1])
-        p3 = envelope.align([self.end, 1])
-        p4 = envelope.align([self.start, -1])
-        p5 = envelope.align([self.end, -1])
+        upper_curve = euklid.vector.PolyLine2D(envelope.curve.nodes[:envelope.noseindex][::-1])
 
-        offset_top = euklid.vector.Vector2D([0, self.offset_top])
-        offset_bottom = euklid.vector.Vector2D([0, self.offset_bottom])
-        
+        top_center = envelope.align([(self.start+self.end)/2, 1])
+        bottom_start = envelope.align([self.start, -1])
+        bottom_end = envelope.align([self.end, -1])
 
-        p1 += offset_top
-        p3 += offset_top
-        p2 += offset_bottom /4
-        p4 += offset_bottom
-        p5 += offset_bottom /2
+        def get_ik_x(polyline: euklid.vector.PolyLine2D, x: float) -> float:
+            return polyline.cut(
+                euklid.vector.Vector2D([x, 0.]),
+                euklid.vector.Vector2D([x, 1.])
+            )[0][0]
 
-        upper = euklid.vector.Interpolation([p1, p3])
-        lower = euklid.vector.Interpolation([p4, p2, p5])
+        diagonal_with_border = euklid.vector.PolyLine2D([bottom_start, top_center, bottom_end]).offset(-diagonal_border)
+        nearest_top_x = diagonal_with_border.nodes[1][0]
+        nearest_top_ik = get_ik_x(upper_curve, nearest_top_x)
 
-        side_border_pct = rib.convert_to_percentage(self.side_border)
+        cut_1_front = get_ik_x(upper_curve, self.start.si)
+        cut_1_back: tuple[float, float] = upper_curve.cut(diagonal_with_border.nodes[0], diagonal_with_border.nodes[1], nearest_top_ik)
+        cut_2_front: tuple[float, float] = upper_curve.cut(diagonal_with_border.nodes[1], diagonal_with_border.nodes[2], nearest_top_ik)
+        cut_2_back = get_ik_x(upper_curve, self.end.si)
+
+        diagonal_cut_front = get_ik_x(diagonal_with_border, self.start.si)
+        diagonal_cut_back = get_ik_x(diagonal_with_border, self.end.si)
+
+        upper_interpolation_front = euklid.vector.Interpolation(
+            upper_curve.get(
+                cut_1_front,
+                cut_1_back[0]
+            ).nodes)
+
+        upper_interpolation_back = euklid.vector.Interpolation(
+            upper_curve.get(
+                cut_2_front[0],
+                cut_2_back
+            ).nodes
+        )
+
+        diagonal_interpolation_front = euklid.vector.Interpolation(
+            diagonal_with_border.get(
+                diagonal_cut_front,
+                cut_1_back[1]
+            ).nodes
+        )
+        diagonal_interpolation_back = euklid.vector.Interpolation(
+            diagonal_with_border.get(
+                cut_2_front[1]+1,
+                diagonal_cut_back
+            ).nodes
+        )
+
+        side_border_pct = rib.convert_to_percentage(self.border_side)
         border_pct = rib.convert_to_percentage(self.border)
 
         total_border_pct = (2*side_border_pct + (self.num_holes-1)*border_pct)
@@ -345,45 +412,24 @@ class AttachmentPointHole(RibHoleBase):
         if hole_width < 0:
             raise ValueError(f"not enough space for {self.num_holes} holes between {self.start} / {self.end} ({rib.name})")
 
-        holes = []
+        hole_positions = []
 
         for hole_no in range(self.num_holes):
             left = self.start + side_border_pct + hole_no*border_pct + hole_no*hole_width
             right = left + hole_width
-            if  ((self.num_holes-1)//2) <= hole_no <=  (self.num_holes//2 +self.skip_holes-1): continue
 
-            if hole_no == 0:
-                left -= self.offset_first_top_holes
-                right -= self.offset_first_top_holes
-            if hole_no == self.num_holes-1:
-                left += self.offset_first_top_holes
-                right += self.offset_first_top_holes
-            
-            if hole_no < self.num_tri_hole_front:
-                left_bot = left 
-                right_bot = left_bot+0.015
-            elif hole_no > self.num_holes - self.num_tri_hole_back-1:
-                right_bot = right
-                left_bot = right_bot-0.015
-            else :
-                left_bot = left
-                right_bot = right
+            hole_positions.append((left, right))
 
-            p1 = euklid.vector.Vector2D([left_bot, lower.get_value(left.si)])
-            p2 = euklid.vector.Vector2D([right_bot, lower.get_value(right.si)])
-            
-            p4 = euklid.vector.Vector2D([left, upper.get_value(left.si)])
-            p3 = euklid.vector.Vector2D([right, upper.get_value(right.si)])
+        holes = self.fit_holes(hole_positions, upper_interpolation_front, diagonal_interpolation_front)
+        holes += self.fit_holes(hole_positions, upper_interpolation_back, diagonal_interpolation_back)
 
-            holes.append(PolygonHole(points=[p1, p2, p3, p4], corner_size=self.corner_size.si))
-        
         return holes
 
     def _get_curves(self, rib: Rib, num: int=80) -> list[euklid.vector.PolyLine2D]:
         curves = []
         for hole in self._get_holes_bottom(rib):
             curves += hole.get_curves(rib, num)
-        if not self.skip_holes == None:    
+        if self.top_holes:
             for hole in self._get_holes_top(rib):
                 curves += hole.get_curves(rib, num)
 
@@ -393,7 +439,7 @@ class AttachmentPointHole(RibHoleBase):
         holes = []
         for hole in self._get_holes_bottom(rib):
             holes += hole.get_centers(rib, scale=scale)
-        if not self.skip_holes == None:    
+        if self.top_holes:
             for hole in self._get_holes_top(rib):
                 holes += hole.get_centers(rib, scale=scale)
 

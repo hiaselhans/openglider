@@ -77,24 +77,19 @@ class HoleATP(DTO):
 
 class HOLEATP5(HoleATP):
     border: Length | Percentage
-    side_border: Length | Percentage
+    border_side: Length | Percentage
 
 class HOLEATP6(HOLEATP5):
     corner_size: Percentage
 
-class HOLEATP7(HOLEATP6):
-    offset: Percentage
-
-class HOLEATP12(HoleATP):
-    offset_top: Percentage
-    offset_bottom: Percentage
-    offset_first_top_holes: Percentage
-    skip_holes: int
-    num_tri_hole_front: int
-    num_tri_hole_back: int
-    border: Length | Percentage
-    side_border: Length | Percentage
+class HOLEATP7(HOLEATP5):
+    border_diagonal: Length | Percentage
     corner_size: Percentage
+
+    def get_object(self) -> AttachmentPointHole:
+        result = super().get_object()
+        result.top_holes = True
+        return result
 
 
 class HolesTable(RibTable):
@@ -108,6 +103,5 @@ class HolesTable(RibTable):
         "HOLEATP": HoleATP,
         "HOLEATP5": HOLEATP5,
         "HOLEATP6": HOLEATP6,
-        "HOLEATP7": HOLEATP7,
-        "HOLEATP12": HOLEATP12
+        "HOLEATP7": HOLEATP7
     }
