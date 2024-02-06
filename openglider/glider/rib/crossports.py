@@ -263,23 +263,36 @@ class AttachmentPointHole(RibHoleBase):
     num_holes: int
     border: Length | Percentage=Length("4cm")
     border_side: Length | Percentage=Length("4cm")
-    border_diagonal: Length | Percentage = Length("1cm")
-    corner_size: Percentage = Percentage(1.)
+    border_diagonal: Length | Percentage = Length(0)
 
-    top_holes: bool = False
+    border_top: Length | Percentage | None = None
+
+    corner_size: Percentage = Percentage(1.)
+    top_triangle_factor: Percentage | None = None
+
     min_hole_height: Length = Length("2cm")
 
-    def fit_holes(self, hole_positions: list[tuple[Percentage, Percentage]], upper: euklid.vector.Interpolation, lower: euklid.vector.Interpolation) -> list[PolygonHole]:
+    def fit_holes(
+            self,
+            hole_positions: list[tuple[Percentage, Percentage]],
+            upper: euklid.vector.Interpolation,
+            lower: euklid.vector.Interpolation,
+            triangle_factors: tuple[Percentage | None, Percentage | None] = (None, None)
+            ) -> list[PolygonHole]:
         holes = []
 
         start = min([p[0] for p in upper.nodes + lower.nodes])
         end = max([p[0] for p in upper.nodes + lower.nodes])
 
         # todo: find measure
-        def get_nodes(x: Percentage) -> list[euklid.vector.Vector2D]:
+        def get_nodes(x: Percentage, triangle_factor: Percentage | None) -> list[euklid.vector.Vector2D]:
             x_normalized = max(start, min(end, x.si))
             upper_y = upper.get_value(x_normalized)
             lower_y = lower.get_value(x_normalized)
+
+            if triangle_factor is not None:
+                lower_y = lower_y + (upper_y - lower_y) * triangle_factor.si
+            
             if abs(upper_y - lower_y) < self.min_hole_height:
                 return [
                     euklid.vector.Vector2D([x_normalized, (upper_y+lower_y)/2])
@@ -293,7 +306,7 @@ class AttachmentPointHole(RibHoleBase):
         for hole_start, hole_end in hole_positions:
             if hole_end < start or hole_start > end:
                 continue
-            points = get_nodes(hole_start) + get_nodes(hole_end)[::-1]
+            points = get_nodes(hole_start, triangle_factors[0]) + get_nodes(hole_end, triangle_factors[1])[::-1]
 
             if len(points) > 2:
                 holes.append(PolygonHole(points=points, corner_size=self.corner_size.si))
@@ -348,6 +361,9 @@ class AttachmentPointHole(RibHoleBase):
     
     @cached_function('self')
     def _get_holes_top(self, rib: Rib) -> list[PolygonHole]:
+        if self.border_top is None:
+            return []
+        
         envelope = self.get_envelope_airfoil(rib)
         diagonal_border = rib.convert_to_percentage(self.border_diagonal).si
         side_border_pct = rib.convert_to_percentage(self.border_side)
@@ -403,7 +419,7 @@ class AttachmentPointHole(RibHoleBase):
         )
 
         side_border_pct = rib.convert_to_percentage(self.border_side)
-        border_pct = rib.convert_to_percentage(self.border)
+        border_pct = rib.convert_to_percentage(self.border_top)
 
         total_border_pct = (2*side_border_pct + (self.num_holes-1)*border_pct)
 
@@ -420,8 +436,8 @@ class AttachmentPointHole(RibHoleBase):
 
             hole_positions.append((left, right))
 
-        holes = self.fit_holes(hole_positions, upper_interpolation_front, diagonal_interpolation_front)
-        holes += self.fit_holes(hole_positions, upper_interpolation_back, diagonal_interpolation_back)
+        holes = self.fit_holes(hole_positions, upper_interpolation_front, diagonal_interpolation_front, (None, self.top_triangle_factor))
+        holes += self.fit_holes(hole_positions, upper_interpolation_back, diagonal_interpolation_back, (self.top_triangle_factor, None))
 
         return holes
 
@@ -429,9 +445,8 @@ class AttachmentPointHole(RibHoleBase):
         curves = []
         for hole in self._get_holes_bottom(rib):
             curves += hole.get_curves(rib, num)
-        if self.top_holes:
-            for hole in self._get_holes_top(rib):
-                curves += hole.get_curves(rib, num)
+        for hole in self._get_holes_top(rib):
+            curves += hole.get_curves(rib, num)
 
         return curves
 
@@ -439,8 +454,7 @@ class AttachmentPointHole(RibHoleBase):
         holes = []
         for hole in self._get_holes_bottom(rib):
             holes += hole.get_centers(rib, scale=scale)
-        if self.top_holes:
-            for hole in self._get_holes_top(rib):
-                holes += hole.get_centers(rib, scale=scale)
+        for hole in self._get_holes_top(rib):
+            holes += hole.get_centers(rib, scale=scale)
 
         return holes
