@@ -2,7 +2,6 @@ from openglider.glider.parametric.table.base import RibTable
 from openglider.glider.parametric.table.base.dto import DTO
 
 from openglider.glider.rib.crossports import RibHole, RibSquareHole, MultiSquareHole, AttachmentPointHole
-
 import logging
 
 from openglider.vector.unit import Angle, Length, Percentage
@@ -78,10 +77,36 @@ class HoleATP(DTO):
 
 class HOLEATP5(HoleATP):
     border: Length | Percentage
-    side_border: Length | Percentage
+    border_side: Length | Percentage
 
 class HOLEATP6(HOLEATP5):
     corner_size: Percentage
+
+class HOLEATP7(HOLEATP5):
+    border_diagonal: Length | Percentage
+    corner_size: Percentage
+
+class HOLEATP8(HOLEATP5):
+    border_diagonal: Length | Percentage
+    margin: Length | Percentage
+    corner_size: Percentage
+
+    def get_object(self) -> AttachmentPointHole:
+        result = super().get_object()
+        return result
+
+class HOLEATP9(HOLEATP5):
+    border_top: Length | Percentage
+    border_diagonal: Length | Percentage
+    margin: Length | Percentage
+    corner_size: Percentage
+
+    def get_object(self) -> AttachmentPointHole:
+        result = super().get_object()
+        return result
+
+class HOLEATP10(HOLEATP9):
+    top_triangle_factor: Percentage
 
 
 class HolesTable(RibTable):
@@ -95,4 +120,8 @@ class HolesTable(RibTable):
         "HOLEATP": HoleATP,
         "HOLEATP5": HOLEATP5,
         "HOLEATP6": HOLEATP6,
+        "HOLEATP7": HOLEATP7,
+        "HOLEATP8": HOLEATP8,
+        "HOLEATP9": HOLEATP9,
+        "HOLEATP10": HOLEATP10
     }
