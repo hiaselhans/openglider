@@ -23,6 +23,9 @@ class ParametricGliderConfig(BaseModel):
     stabi_cell_position: float = 0.7
     stabi_cell_width: float = 0.5
     stabi_cell_length: float = 0.6
+    stabi_cell_thickness: float = 0.7
+
+    use_mean_profile: bool = False
 
     version: str = __version__
 

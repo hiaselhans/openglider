@@ -17,10 +17,12 @@ class HelpView(QtWidgets.QWidget):
 
         self.all_dtos = {}
 
-        for name, _cls in GliderTables.__annotations__.items():
+        for table_name, _cls in GliderTables.__annotations__.items():
             if issubclass(_cls, ElementTable):
+                table_type = _cls.table_type.name
+
                 for dto_name, dto in _cls.dtos.items():
-                    self.all_dtos[dto_name] = dto
+                    self.all_dtos[f"{table_type} -> {table_name} -> {dto_name}"] = dto
 
         
         layout = QtWidgets.QVBoxLayout()

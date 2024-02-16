@@ -19,12 +19,12 @@ class Ballooning(BallooningBase):
 
     def __getitem__(self, xval: float) -> float:
         """Get Ballooning Value (%) for a certain XValue"""
-        if -1 <= xval < 0:
+        if -1. <= xval < 0.:
             #return self.upper.xpoint(-xval)[1]
-            return self.upper.get_value(-xval)
+            return max(0., self.upper.get_value(-xval))
         elif 0 <= xval <= 1:
             #return -self.lower.xpoint(xval)[1]
-            return self.lower.get_value(xval)
+            return max(0., self.lower.get_value(xval))
         else:
             raise ValueError(f"Value {xval} not between -1 and 1")
 

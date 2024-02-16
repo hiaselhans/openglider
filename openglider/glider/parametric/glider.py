@@ -279,12 +279,86 @@ class ParametricGlider:
             return resolve
 
 
-        for rib_no, chord in enumerate(self.shape.chords):            
+        for rib_no, chord in enumerate(self.shape.chords):
             parsers.append(Parser(
                 variable_resolver=resolver_factory(rib_no)
             ))
         
         return parsers
+    
+    def get_profiles(self, num_profile: int | None=None) -> list[pyfoil.Airfoil]:
+        num_profile = num_profile or self.num_profile
+
+        if num_profile is not None:
+            airfoil_distribution = list(Distribution.from_cos_distribution(num_profile))
+        else:
+            airfoil_distribution = self.profiles[0].x_values
+
+        balloonings = None
+        if self.config.use_mean_profile:
+            balloonings = self.apply_ballooning()
+
+        x_values = self.shape.rib_x_values
+        cell_widths = [x2-x1 for x2, x1 in zip(x_values[:-1], x_values[1:])]
+        rib_chords = self.shape.chords
+
+        if self.shape.has_center_cell:
+            x_values = x_values[1:]
+            rib_chords = rib_chords[1:]
+
+        profile_merge_curve = euklid.vector.Interpolation(self.profile_merge_curve.get_sequence(self.num_interpolate).nodes)
+        
+        result: list[pyfoil.Airfoil] = []
+
+        for rib_no, x_value in enumerate(x_values):
+            merge_factor, scale_factor = self.tables.profiles.get_factors(rib_no)
+
+            if merge_factor is not None:
+                factor = merge_factor
+            else:
+                factor = profile_merge_curve.get_value(abs(x_value))
+
+            profile = self.get_merge_profile(factor)
+
+
+            if scale_factor is not None:
+                profile = profile.set_thickness(profile.thickness * scale_factor)
+            
+            if self.config.use_mean_profile:
+                assert balloonings is not None  # satisfy type-checker
+
+                if rib_no == 0 and not self.shape.has_center_cell:
+                    # center rib => use only the ballooning from the outside
+                    arc_height = [balloonings[0].get_mean_height(x) * cell_widths[0] for x in profile.x_values]
+                else:
+                    left_cell_index = rib_no
+                    if self.shape.has_center_cell:
+                        left_cell_index -= 1
+                    
+                    arc_height = [
+                        (
+                            balloonings[left_cell_index].get_mean_height(x) * cell_widths[left_cell_index] + 
+                            balloonings[left_cell_index+1].get_mean_height(x) * cell_widths[left_cell_index+1]
+                        )/2
+                        for x in profile.x_values
+                    ]
+                
+                profile = BallooningBase.apply_height_to_airfoil(profile, [x/rib_chords[rib_no] for x in arc_height])
+
+            profile.name = f"Profile{rib_no+1}"
+
+            if flap := self.tables.profiles.get_flap(rib_no):
+                logger.debug(f"add flap: {flap}")
+                profile = profile.add_flap(**flap)
+
+            result.append(profile.set_x_values(airfoil_distribution))
+
+        if self.shape.has_center_cell:
+            mirrored_profile = result[0].copy()
+            result.insert(0, mirrored_profile)
+
+
+        return result
 
     def get_glider_3d(self, glider: Glider=None, num: int=50, num_profile: int | None=None) -> Glider:
         """returns a new glider from parametric values"""
@@ -305,26 +379,16 @@ class ParametricGlider:
 
         arc_pos = self.arc.get_arc_positions(x_values).tolist()
         rib_angles = self.arc.get_rib_angles(x_values)
+        profiles = self.get_profiles(num_profile=num_profile)
 
-        if self.num_profile is not None:
-            num_profile = self.num_profile
-
-        if num_profile is not None:
-            airfoil_distribution = list(Distribution.from_cos_distribution(num_profile))
-        else:
-            airfoil_distribution = self.profiles[0].x_values
-
-
-        logger.info("apply elements")
         offset_x = shape_ribs[0][0][1]
 
-
         logger.info("create ribs")
-        profile_merge_values = self.get_profile_merge_values()
 
         for rib_no, x_value in enumerate(x_values):
             front, back = shape_ribs[rib_no]
             arc = arc_pos[rib_no]
+            profile = profiles[rib_no]
 
             startpoint = euklid.vector.Vector3D([-front[1] + offset_x, arc[0], arc[1]])
 
@@ -335,31 +399,12 @@ class ParametricGlider:
                 material = openglider.materials.Material.default()
 
             chord = abs(front[1]-back[1])
-            factor = profile_merge_values[rib_no]
-
-            merge_factor, scale_factor = self.tables.profiles.get_factors(rib_no)
-
-            if merge_factor is not None:
-                factor = merge_factor
-
-            profile = self.get_merge_profile(factor).set_x_values(airfoil_distribution)
-
-
-            if scale_factor is not None:
-                profile = profile.set_thickness(profile.thickness * scale_factor)
-
-            profile.name = f"Profile{rib_no}"
-
-            if flap := self.tables.profiles.get_flap(rib_no):
-                logger.debug(f"add flap: {flap}")
-                profile = profile.add_flap(**flap)
 
             sharknose = self.tables.profiles.get_sharknose(rib_no, resolvers=resolvers)
 
             this_rib_holes = self.tables.holes.get(rib_no, resolvers=resolvers)
             this_rigid_foils = self.tables.rigidfoils_rib.get(rib_no, resolvers=resolvers)
 
-            logger.debug(f"holes for rib:  {rib_no} {this_rib_holes}")
             rib = Rib(
                 profile_2d=profile,
                 pos=startpoint,
@@ -434,7 +479,7 @@ class ParametricGlider:
             ballooning = BallooningBezierNeu([(-1,0.015), (-0.7, 0.04), (-0.2, 0.04), (0, 0.02), (0.2, 0.04), (0.7, 0.04), (1,0.015)])
             cell.ballooning = ballooning
 
-            glider.ribs[-2].profile_2d *= 0.7
+            glider.ribs[-2].profile_2d *= self.config.stabi_cell_thickness
         
         glider.ribs[-1].profile_2d *= 0.
         glider.rename_parts()
@@ -448,17 +493,23 @@ class ParametricGlider:
 
         return glider
 
-    def apply_ballooning(self, glider3d: Glider) -> Glider:
+    def apply_ballooning(self, glider3d: Glider | None=None) -> list[BallooningBase]:
         for ballooning in self.balloonings:
             ballooning.apply_splines()
 
         ballooning_factors = self.get_ballooning_merge()
+        balloonings = []
 
-        for cell_no, cell in enumerate(glider3d.cells):
+        for cell_no in range(len(ballooning_factors)):
             ballooning_factor = ballooning_factors[cell_no]
-            cell.ballooning = self.merge_ballooning(*ballooning_factor)
+            ballooning = self.merge_ballooning(*ballooning_factor)
+            if glider3d is not None:
+                cell = glider3d.cells[cell_no]
+                cell.ballooning = ballooning
+            
+            balloonings.append(ballooning)
 
-        return glider3d
+        return balloonings
 
     @property
     def v_inf(self) -> euklid.vector.Vector3D:

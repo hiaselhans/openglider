@@ -8,7 +8,7 @@ import numpy as np
 import euklid
 
 import openglider
-
+from pyfoil import Airfoil
 
 class ArcSinc:
     def __init__(self) -> None:
@@ -80,7 +80,7 @@ class BallooningBase(ABC):
 
     def get_phi(self, xval: float) -> float:
         """Get Ballooning Arc (phi) for a certain XValue"""
-        return self.phi(1. / (self[xval] + 1))
+        return self.phi(self[xval])
 
     def get_tension_factor(self, xval: float) -> float:
         """Get the tension due to ballooning"""
@@ -89,6 +89,39 @@ class BallooningBase(ABC):
             return value
         else:
             return 1. / value
+        
+    def get_mean_height(self, x: float) -> float:
+        """
+        Get the mean height (multiply by cell width!)"""
+        ballooning_amount = self[x]
+        phi = self.phi(ballooning_amount)
+        if phi < 1e-6:
+            return 0.
+        
+        r_by_width = (1+ballooning_amount/2) / phi / 2
+
+        return r_by_width * (math.sin(phi) / phi - math.cos(phi))
+    
+    def get_max_height(self, x: float) -> float:
+        ballooning_amount = self[x]
+        phi = self.phi(ballooning_amount)
+        if phi < 1e-6:
+            return 0.
+        r_by_width = (1+ballooning_amount/2) / phi
+
+        return r_by_width * (1 - math.cos(phi))
+    
+    @classmethod
+    def apply_height_to_airfoil(cls, airfoil: Airfoil, amounts: list[float]) -> Airfoil:
+        normals = airfoil.normvectors
+
+        assert len(normals.nodes) == len(airfoil.curve.nodes) == len(amounts)
+
+        new_points = [
+            p + n * amount for p, amount, n in zip(airfoil.curve.nodes, amounts, normals)
+        ]
+
+        return Airfoil(new_points).normalized()
 
     @classmethod
     def phi(cls, baloon: float) -> float:
@@ -96,7 +129,9 @@ class BallooningBase(ABC):
         Return the angle of the piece of cake.
         b/l=R*phi/(R*Sin(phi)) -> Phi=arsinc(l/b)
         """
-        return cls.arcsinc(baloon)
+        if baloon < 0:
+            return 0
+        return cls.arcsinc(1/(baloon+1))
     
     def close_trailing_edge(self, x: float) -> None:
         raise NotImplementedError()
