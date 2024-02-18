@@ -1,18 +1,10 @@
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
-from collections.abc import Callable
 
 import euklid
 from openglider import logging
-from openglider.airfoil import get_x_value
-from openglider.glider.cell.diagonals import (DiagonalRib, DiagonalSide,
-                                              TensionStrap)
-from openglider.glider.cell.panel import PANELCUT_TYPES
-from openglider.glider.rib.rigidfoils import RigidFoilBase
 from openglider.plots.config import PatternConfig
-from openglider.plots.usage_stats import MaterialUsage
 from openglider.utils.config import Config
 from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
@@ -24,9 +16,7 @@ from openglider.plots.usage_stats import Material, MaterialUsage
 
 
 if TYPE_CHECKING:
-    from openglider.glider.rib import Rib
     from openglider.glider.cell import Cell
-    from openglider.glider import Glider
 
 
 Vector2D = euklid.vector.Vector2D
