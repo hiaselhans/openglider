@@ -1,23 +1,20 @@
 from __future__ import annotations
-import copy
 import math
 import euklid
 
 from openglider.airfoil import Profile3D
-from openglider.utils.cache import CachedObject, cached_property
+from openglider.utils.cache import cached_property
+from openglider.utils.dataclass import BaseModel
 
 
-class BasicCell(CachedObject):
+class BasicCell(BaseModel):
     """
     A very simple cell without any extras like midribs, diagonals,..
     """
-    def __init__(self, prof1: Profile3D=None, prof2: Profile3D=None, ballooning: list[float]=None, name: str="unnamed_cell"):
-        self.prof1 = prof1 or Profile3D(euklid.vector.PolyLine3D([]))
-        self.prof2 = prof2 or Profile3D(euklid.vector.PolyLine3D([]))
-
-        if ballooning is not None:
-            self.ballooning_phi = ballooning  # ballooning arcs -> property in cell
-        self.name = name
+    prof1: Profile3D
+    prof2: Profile3D
+    ballooning_phi: list[float]
+    name: str = "unnamed_cell"
 
     def point_basic_cell(self, y: int=0, ik: float=0) -> euklid.vector.Vector3D:
         ##round ballooning
@@ -35,6 +32,7 @@ class BasicCell(CachedObject):
             # 2: x2 = R*normvekt*(cos(phi2)-cos(phi)
             # 3: norm(d)/r*(1-x) = 2*sin(phi(2))
 
+            x_values: list[float] = []
             distances = []
             heights = []
             node_len = len(self.prof1.curve)
@@ -46,6 +44,9 @@ class BasicCell(CachedObject):
             
             else:
                 for i in range(len(self.prof1.curve.nodes)):  # Arc -> phi(bal) -> r  # oder so...
+                    x_left = self.prof1.x_values[i]
+                    x_right = self.prof2.x_values[i]
+                    x_values.append(x_left + y_value * (x_right - x_left))
                     ballooning_radius = self.ballooning_radius[i]
 
                     if close_trailing_edge and i in (0, node_len-1):
@@ -71,7 +72,7 @@ class BasicCell(CachedObject):
             
                 midrib = self.prof1.curve.add(diff.scale_nodes(distances)).add(self.normvectors.scale_nodes(heights))
 
-            return Profile3D(midrib)
+            return Profile3D(curve=midrib, x_values=x_values)
 
     @cached_property('prof1', 'prof2')
     def normvectors(self) -> euklid.vector.PolyLine3D:
@@ -119,7 +120,3 @@ class BasicCell(CachedObject):
             tension.append(value * (p1-p2).length())
         
         return tension
-            
-
-    def copy(self) -> BasicCell:
-        return copy.deepcopy(self)

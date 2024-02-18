@@ -70,7 +70,8 @@ class PanelPlot:
             PANELCUT_TYPES.round: self.config.cut_round
         }
 
-        ik_values = self.panel._get_ik_values(self.cell, self.config.midribs, exact=True)
+        ik_front = self.panel.cut_front._get_ik_values(self.cell, x_values=self.config.midribs, exact=True)
+        ik_back = self.panel.cut_back._get_ik_values(self.cell, x_values=self.config.midribs, exact=True)
 
         # get seam allowance
         if self.panel.cut_front.seam_allowance is not None:
@@ -87,12 +88,13 @@ class PanelPlot:
         self.cut_front = cut_types[self.panel.cut_front.cut_type](amount=allowance_front)
         self.cut_back = cut_types[self.panel.cut_back.cut_type](amount=allowance_back)
 
-        inner_front = [(line, ik[0]) for line, ik in zip(self.inner, ik_values)]
-        inner_back = [(line, ik[1]) for line, ik in zip(self.inner, ik_values)]
+        inner_front = [(line, ik) for line, ik in zip(self.inner, ik_front)]
+        inner_back = [(line, ik) for line, ik in zip(self.inner, ik_back)]
 
         shape_3d_amount_front = [-x for x in self.panel.cut_front.cut_3d_amount]
         shape_3d_amount_back = self.panel.cut_back.cut_3d_amount
 
+        # zero-out 3d-shaping if there is none
         if self.panel.cut_front.cut_type != PANELCUT_TYPES.cut_3d:
             dist = np.linspace(shape_3d_amount_front[0], shape_3d_amount_front[-1], len(shape_3d_amount_front))
             shape_3d_amount_front = list(dist)
@@ -184,21 +186,7 @@ class PanelPlot:
             self.back_curve
         ]
 
-        # TODO
-        if False:
-            if panel_right:
-                right = euklid.vector.PolyLine2D([panel_front.last()]) + panel_right + euklid.vector.PolyLine2D([panel_back[0]])
-                plotpart.layers["cuts"].append(right)
-
-            plotpart.layers["cuts"].append(panel_back)
-
-            if panel_left:
-                left = euklid.vector.PolyLine2D([panel_back.last()]) + panel_left + euklid.vector.PolyLine2D([panel_front[0]])
-                plotpart.layers["cuts"].append(left)
-
-            plotpart.layers["cuts"].append(panel_front)
-        else:
-            plotpart.layers["cuts"].append(envelope.copy())
+        plotpart.layers["cuts"].append(envelope.copy())
 
         self._insert_text(plotpart)
         self._insert_controlpoints(plotpart)
@@ -206,8 +194,6 @@ class PanelPlot:
         self._insert_diagonals(plotpart)
         self._insert_rigidfoils(plotpart)
         self._insert_miniribs(plotpart)
-        #self._insert_center_rods(plotpart)
-        # TODO: add in parametric way
 
         self._align_upright(plotpart)
 
@@ -487,10 +473,39 @@ class PanelPlot:
                         plotpart.layers["text"] += Text(f" {cell_attachment_point.name} ", p1, p2,
                                                         size=0.01,  # 1cm
                                                         align=text_align, valign=0, height=0.8).get_vectors()  # type: ignore
+                        
+    def draw_straight_line(self, y: float, start: float, end: float) -> euklid.vector.PolyLine2D | None:
+        logger.warning(f"straight line {y} {start} {end}")
+        if start > max(self.panel.cut_back.x_left, self.panel.cut_back.x_right):
+            return None
+        if end < min(self.panel.cut_front.x_left, self.panel.cut_front.x_right):
+            return None
+        
+        
+        flattened_cell = self.cell.get_flattened_cell()
+
+        ik_min = self.panel.cut_front._get_ik_values(self.cell, x_values=[y], exact=False)[0]
+        ik_max = self.panel.cut_back._get_ik_values(self.cell, x_values=[y], exact=False)[0]
+
+        line = flattened_cell.at_position(Percentage(y))
+
+        ik_front = self.cell.rib1.profile_2d(start)
+        ik_back = self.cell.rib1.profile_2d(end)
+        #ik_front = mix(self.cell.rib1.profile_2d(start), self.cell.rib2.profile_2d(start), y)
+        #ik_back = mix(self.cell.rib1.profile_2d(end), self.cell.rib2.profile_2d(end), y)
+        
+        ik_front = max(ik_front, ik_min)
+        ik_back = min(ik_back, ik_max)
+
+        logger.warning(f"ok2 {ik_front} {ik_back}")
+        if ik_front < ik_back:
+            return line.get(ik_front, ik_back)
+        
+        return None
     
     def _insert_rigidfoils(self, plotpart: PlotPart) -> None:
         for rigidfoil in self.cell.rigidfoils:
-            line = rigidfoil.draw_panel_marks(self.cell, self.panel)
+            line = self.draw_straight_line(rigidfoil.y, rigidfoil.x_start, rigidfoil.x_end)
             if line is not None:
                 plotpart.layers["marks"].append(line)
 
@@ -500,9 +515,11 @@ class PanelPlot:
 
     def _insert_miniribs(self, plotpart: PlotPart) -> None:
         for minirib in self.cell.miniribs:
-            if minirib.draw_panel_marks(self.cell, self.panel) is not None:
-                line = minirib.draw_panel_marks(self.cell, self.panel)
+            back_cut = minirib.back_cut or 1.
+            line1 = self.draw_straight_line(minirib.yvalue, -back_cut, -minirib.front_cut)
+            line2 = self.draw_straight_line(minirib.yvalue, minirib.front_cut, back_cut)
 
+            for line in (line1, line2):
                 if line is not None:
                     plotpart.layers["marks"].append(line)
 

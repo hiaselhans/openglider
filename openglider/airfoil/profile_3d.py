@@ -4,11 +4,13 @@ import euklid
 import pyfoil
 
 from openglider.utils.cache import cached_property
+from openglider.utils.dataclass import BaseModel
 
-class Profile3D:
-    def __init__(self, data: euklid.vector.PolyLine3D, name: str="unnamed") -> None:
-        self.curve = euklid.vector.PolyLine3D(data)
-        self.name = name
+class Profile3D(BaseModel):
+    curve: euklid.vector.PolyLine3D
+    x_values: list[float]
+
+    name: str = "unnamed"
 
     @overload
     def __getitem__(self, ik: float) -> euklid.vector.Vector3D: ...
@@ -68,8 +70,6 @@ class Profile3D:
         p1 = self.curve.nodes[0]
         diff = [p - p1 for p in self.curve.nodes]
 
-
-
         xvect = diff[self.noseindex].normalized() * -1
         yvect = euklid.vector.Vector3D([0, 0, 0])
 
@@ -83,16 +83,19 @@ class Profile3D:
 
     def flatten(self) -> pyfoil.Airfoil:
         """Flatten the airfoil and return a 2d-Representative"""
-        layer: euklid.plane.Plane = self.projection_layer
-        return pyfoil.Airfoil([layer.project(p) for p in self.curve.nodes],
-                         name=self.name or 'profile' + "_flattened")
+        layer = self.projection_layer
+        return pyfoil.Airfoil(
+            layer.project(self.curve).nodes,
+            name=self.name or 'profile' + "_flattened"
+        )
 
     @cached_property('self')
     def normvectors(self) -> list[euklid.vector.Vector3D]:
         layer = self.projection_layer
         profnorm = layer.normvector
 
-        get_normvector = lambda x: x.cross(profnorm).normalized()
+        def get_normvector(x: euklid.vector.Vector3D) -> euklid.vector.Vector3D:
+            return x.cross(profnorm).normalized()
 
         vectors = [get_normvector(self.curve.nodes[1] - self.curve.nodes[0])]
         for i in range(1, len(self.curve.nodes) - 1):

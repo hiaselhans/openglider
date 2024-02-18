@@ -64,7 +64,7 @@ class RibBase(BaseModel):
         if x_values is not None:
             hull = hull.set_x_values(x_values)
 
-        return Profile3D(self.align_all(hull.curve))
+        return Profile3D(curve=self.align_all(hull.curve), x_values=x_values or hull.x_values)
 
     @cached_property('profile_3d')
     def normvectors(self) -> list[euklid.vector.Vector3D]:
@@ -247,7 +247,7 @@ class Rib(RibBase):
             if isinstance(margin, Percentage):
                 margin = margin/self.chord
             
-            envelope = self.profile_2d.curve.offset(-margin.si, simple=False)
+            envelope = self.profile_2d.curve.offset(-margin.si, simple=False).nodes
             
             return pyfoil.Airfoil(envelope)
         

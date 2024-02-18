@@ -23,6 +23,7 @@ from openglider.utils import consistent_value, linspace
 from openglider.utils.cache import (HashedList, cached_function,
                                     cached_property, hash_list)
 from openglider.utils.dataclass import BaseModel, Field
+from openglider.vector.unit import Percentage
 
 logger = logging.getLogger(__file__)
 
@@ -31,6 +32,13 @@ class FlattenedCell(BaseModel):
     inner: list[euklid.vector.PolyLine2D]
     ballooned: tuple[euklid.vector.PolyLine2D, euklid.vector.PolyLine2D]
 
+    def at_position(self, y: Percentage) -> euklid.vector.PolyLine2D:
+        if y.si == 0:
+            return self.ballooned[0]
+        elif y.si == 1:
+            return self.ballooned[1]
+        else:
+            return self.ballooned[0].mix(self.ballooned[1], y.si)
 
 class Cell(BaseModel):
     rib1: Rib
@@ -122,7 +130,7 @@ class Cell(BaseModel):
         if len(profile2) != profile_numpoints:
             profile2 = self.rib2.get_profile_3d(x_values=profile_x_values)
         
-        return BasicCell(profile1, profile2, self.ballooning_phi)
+        return BasicCell(prof1=profile1, prof2=profile2, ballooning_phi=self.ballooning_phi)
 
     def get_normvector(self) -> euklid.vector.Vector3D:
         p1 = self.rib1.point(-1)
@@ -167,10 +175,10 @@ class Cell(BaseModel):
         points: list[euklid.vector.Vector3D] = []
         for xval, with_bal, without_bal in zip(
                 self.x_values, shape_with_ballooning, shape_without_ballooning):
-            fakt = minirib.multiplier(xval)  # factor ballooned/unb. (0-1)
+            fakt = minirib.get_multiplier(xval)  # factor ballooned/unb. (0-1)
             point = without_bal + (with_bal - without_bal) * fakt
             points.append(point)
-        return Profile3D(euklid.vector.PolyLine3D(points))
+        return Profile3D(curve=euklid.vector.PolyLine3D(points), x_values=self.x_values)
 
     @cached_property('rib_profiles_3d')
     def _child_cells(self) -> list[BasicCell]:
@@ -184,7 +192,12 @@ class Cell(BaseModel):
         for child_no in range(len(self.rib_profiles_3d)-1):
             leftrib = self.rib_profiles_3d[child_no]
             rightrib = self.rib_profiles_3d[child_no+1]
-            child_cells.append(BasicCell(leftrib, rightrib, ballooning=[], name=f"{self.name}_{child_no}"))
+            child_cells.append(BasicCell(
+                prof1=leftrib,
+                prof2=rightrib,
+                ballooning_phi=[],
+                name=f"{self.name}_{child_no}"
+            ))
         
         if not self.miniribs:
             return child_cells

@@ -95,7 +95,10 @@ class PanelCut(BaseModel):
         return hash_list(self.x_left, self.x_right, self.cut_type)
 
     @cached_function("self")
-    def _get_ik_values(self, cell: Cell, numribs: int=0, exact: bool=True) -> list[float]:
+    def _get_ik_values(self, cell: Cell, x_values: list[float] | int, exact: bool=True) -> list[float]:
+        if isinstance(x_values, int):
+            x_values = [0] + [i/(x_values+1) for i in range(1, x_values+1)] + [1]
+
         x_values_left = cell.rib1.profile_2d.x_values
         x_values_right = cell.rib2.profile_2d.x_values
 
@@ -114,23 +117,26 @@ class PanelCut(BaseModel):
         else:
             curve = euklid.vector.Interpolation(points_2d)
         
-        ik_values = [ik_left]
+        ik_values = []
 
-        for i in range(1, numribs+1):
-            x = i / (numribs+1)
-            y = curve.get_value(x)
+        for x in x_values:
+            if x == 0:
+                ik_values.append(ik_left)
+            elif x == 1:
+                ik_values.append(ik_right)
+            else:
+                y = curve.get_value(x)
 
-            _ik_left = get_x_value(x_values_left, y)
-            _ik_right = get_x_value(x_values_right, y)
-            ik_values.append(_ik_left + (_ik_right-_ik_left) * x)
-        
-        ik_values.append(ik_right)
+                _ik_left = get_x_value(x_values_left, y)
+                _ik_right = get_x_value(x_values_right, y)
+                ik_values.append(_ik_left + (_ik_right-_ik_left) * x)
 
         if not exact:
             return ik_values
 
         ik_values_new = []
-        inner = cell.get_flattened_cell(num_inner=numribs+2).inner
+        flattened = cell.get_flattened_cell()  # noqa: F821
+        inner = [flattened.at_position(Percentage(x)) for x in x_values]
 
         points_2d = [
             inner[0].get(ik_left),
@@ -138,26 +144,25 @@ class PanelCut(BaseModel):
         ]
 
         if self.x_center:
-            p = [0.5, self.x_center.si]
-            p1 = inner[0].get(get_x_value(x_values_left, p[1]))
-            p2 = inner[-1].get(get_x_value(x_values_left, p[1]))
+            p1 = inner[0].get(get_x_value(x_values_left, self.x_center.si))
+            p2 = inner[-1].get(get_x_value(x_values_left, self.x_center.si))
 
-            points_2d.insert(1, p1+(p2-p1)*p[0])
+            points_2d.insert(1, p1+(p2-p1)*0.5)
         
         if self.x_center:
             curve_exact = euklid.spline.BSplineCurve(points_2d).get_sequence(50)
         else:
             curve_exact = euklid.vector.PolyLine2D(points_2d)
 
-        for i, ik in enumerate(ik_values):
-            line: euklid.vector.PolyLine2D = inner[i]
+        for x, ik in zip(x_values, ik_values):
+            line = flattened.at_position(Percentage(x))
 
             try:
                 _ik, _ = line.cut(curve_exact, ik)
                 if abs(_ik-ik) < 20:
                     ik = _ik
             except RuntimeError:
-                logger.error(f"no cut found for panel: {self} ({i}/{ik})")
+                logger.error(f"no cut found for panel: {self} ({x}/{ik})")
 
             ik_values_new.append(ik)
         
@@ -165,8 +170,8 @@ class PanelCut(BaseModel):
 
 
     @cached_function("self")
-    def _get_ik_interpolation(self, cell: Cell, numribs: int=0, exact: bool=True) -> euklid.vector.Interpolation:
-        ik_values = self._get_ik_values(cell, numribs=5, exact=exact)
+    def _get_ik_interpolation(self, cell: Cell, numribs: int=5, exact: bool=True) -> euklid.vector.Interpolation:
+        ik_values = self._get_ik_values(cell, x_values=numribs, exact=exact)
         numpoints = len(ik_values)-1
         ik_interpolation = euklid.vector.Interpolation(
             [[i/numpoints, x] for i, x in enumerate(ik_values)]
@@ -175,7 +180,7 @@ class PanelCut(BaseModel):
         return ik_interpolation
     
     def get_curve_2d(self, cell: Cell, numribs: int=0, exact: bool=True) -> euklid.vector.PolyLine2D:
-        ik_values = self._get_ik_values(cell, numribs=numribs, exact=exact)
+        ik_values = self._get_ik_values(cell, x_values=numribs, exact=exact)
 
         ribs = cell.get_flattened_cell(num_inner=numribs+2).inner
         points_2d = [rib.get(ik) for rib, ik in zip(ribs, ik_values)]
@@ -432,8 +437,8 @@ class Panel(BaseModel):
         :param numribs: number of interpolation steps between ribs
         :return: [[front_ik_0, back_ik_0], ..[front_ik_n, back_ik_n]] with n is numribs + 1
         """
-        ik_front = self.cut_front._get_ik_values(cell, numribs=numribs, exact=exact)
-        ik_back = self.cut_back._get_ik_values(cell, numribs=numribs, exact=exact)
+        ik_front = self.cut_front._get_ik_values(cell, x_values=numribs, exact=exact)
+        ik_back = self.cut_back._get_ik_values(cell, x_values=numribs, exact=exact)
 
         return [(ik1, ik2) for ik1, ik2 in zip(ik_front, ik_back)]
         
