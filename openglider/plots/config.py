@@ -27,13 +27,6 @@ class PatternConfigOld(Config):
     patterns_align_dist_x = patterns_align_dist_y
     patterns_scale = 1000
 
-    allowance_general = 0.01
-    allowance_parallel = 0.01
-    allowance_orthogonal = 0.01
-    allowance_diagonals = 0.01
-    allowance_trailing_edge = 0.01
-    allowance_entry_open = 0.015
-
     insert_design_cuts = False
 
     marks_diagonal_front: marks.Mark = marks.Combine(marks.Inside(marks.Arrow(left=True, name="diagonal_front")), marks.Dot(0.2, 0.8))
@@ -54,9 +47,6 @@ class PatternConfigOld(Config):
     rib_text_in_seam = False
     rib_text_pos = 0.03
 
-    allowance_design = 0.012  # trailing_edge
-
-    drib_allowance_folds = Length(0.012)
     drib_text_position = 0.1
 
     insert_attachment_point_text = True
@@ -78,12 +68,6 @@ class OtherPatternConfig(PatternConfigOld):
     cut_diagonal_fold = cuts.SimpleCut
     
     rib_text_in_seam = False
-    
-    allowance_design = 0.01
-    drib_allowance_folds = Length("1cm")
-    allowance_entry_open = 0.021
-
-
 
     marks_diagonal_front = marks.Dot(0.2, 0.8)
     marks_diagonal_back = marks.Dot(0.2, 0.8)

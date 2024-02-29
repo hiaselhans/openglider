@@ -43,8 +43,8 @@ class DribPlot:
         self.right = right.rotate(-angle, euklid.vector.Vector2D([0,0]))
 
         # left and right are going top to bottom -> offset reversed
-        self.left_out = self.left.offset(self.config.allowance_general)
-        self.right_out = self.right.offset(-self.config.allowance_general)
+        self.left_out = self.left.offset(self.cell.rib1.seam_allowance.si)
+        self.right_out = self.right.offset(-self.cell.rib2.seam_allowance.si)
 
     def get_left(self, x: float) -> tuple[euklid.vector.Vector2D, euklid.vector.Vector2D]:
         return self.get_p1_p2(x, right_side=False)
@@ -166,7 +166,7 @@ class DribPlot:
         plotpart.layers["text"] += Text(f" {self.drib.name} ",
                                         self.left.nodes[node_index],
                                         self.right.nodes[node_index],
-                                        size=self.config.drib_allowance_folds * 0.6,
+                                        size=self.drib.fold_allowance * 0.6,
                                         height=0.6,
                                         valign=val_valign).get_vectors()
 
@@ -177,8 +177,7 @@ class DribPlot:
         plotpart = PlotPart(material_code=self.drib.material_code, name=self.drib.name)
 
         if num_folds > 0:
-            print("a", num_folds, self.drib.num_folds)
-            alw2 = self.config.drib_allowance_folds
+            alw2 = self.drib.fold_allowance
             cut_front = self.config.cut_diagonal_fold(amount=alw2, num_folds=num_folds)
             cut_back = self.config.cut_diagonal_fold(amount=-alw2, num_folds=num_folds)
             
@@ -186,22 +185,12 @@ class DribPlot:
             cut_back_result = cut_back.apply([(self.left, len(self.left) - 1), (self.right, len(self.right) - 1)], self.left_out, self.right_out)
             
             plotpart.layers["cuts"] += [self.left_out.get(cut_front_result.index_left, cut_back_result.index_left) +
-                                        cut_back_result.curve +
+                                        cut_back_result.outline +
                                         self.right_out.get(cut_back_result.index_right, cut_front_result.index_right) +
-                                        cut_front_result.curve.reverse()
+                                        cut_front_result.outline.reverse()
             ]
 
         else:
-            print("b", num_folds, self.drib.num_folds)
-            #p1 = self.left_out.cut(self.left.get(0), self.right.get(0), 0)[0]
-            #p2 = self.left_out.cut(self.left.get(len(self.left)-1), self.right.get(len(self.right)-1), len(self.left_out))[0]
-            #p3 = self.right_out.cut(self.left.get(0), self.right.get(0), 0)[0]
-            #p4 = self.right_out.cut(self.left.get(len(self.left)-1), self.right.get(len(self.right)-1), len(self.right_out))[0]
-
-            #outer = self.left_out.get(p1, p2)
-            #outer += self.right_out.get(p3,p4).reverse()
-            #outer += euklid.vector.PolyLine2D([self.left_out.get(p1)])
-
             outer = self.left_out.copy()
             outer += euklid.vector.PolyLine2D([self.left.nodes[-1]])
             outer += euklid.vector.PolyLine2D([self.right.nodes[-1]])

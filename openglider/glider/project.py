@@ -165,10 +165,11 @@ class GliderProject:
     @classmethod
     def import_ods(cls, path: str) -> GliderProject:
         tables = openglider.utils.table.Table.load(path)
+        table_dct = {t.name: t for t in tables}
         changelog = []
         
-        if len(tables) > 9:
-            changelog_table = tables[9]
+        if "Changelog" in table_dct:
+            changelog_table = table_dct["Changelog"]
 
             for row in range(1, changelog_table.num_rows):
                 if changelog_table[row, 0]:

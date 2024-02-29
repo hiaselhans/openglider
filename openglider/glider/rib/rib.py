@@ -113,6 +113,9 @@ class Rib(RibBase):
     zrot: float = 0.
     xrot: float = 0.
 
+    seam_allowance: Length
+    trailing_edge_extra: Length | None
+
     holes: list[RibHoleBase] = Field(default_factory=list)
     rigidfoils: list[RigidFoilBase] = Field(default_factory=list)
     attachment_points: list[AttachmentPoint] = Field(default_factory=list)

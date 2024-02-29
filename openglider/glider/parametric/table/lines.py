@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 import euklid
 import pydantic
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 class LineSetTable(BaseModel):
+    table_name: ClassVar[str] = "Lines"
     table: Table = pydantic.Field(default_factory=Table)
     lower_attachment_points: dict[str, Node] = pydantic.Field(default_factory=dict)
 
@@ -53,9 +54,9 @@ class LineSetTable(BaseModel):
             if value is not None:
                 if column == 0:  # lower nodes
                     lower_node_name = self.table[row, 0]
-                    if not type(lower_node_name) == str:
+                    if not isinstance(lower_node_name, str):
                         lower_node_name = str(int(lower_node_name))
-                    
+
                     attachment_point = self.lower_attachment_points[lower_node_name]
                     current_nodes = [attachment_point]
                     column += 1

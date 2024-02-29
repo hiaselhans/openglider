@@ -20,7 +20,7 @@ class Mark(ABC):
         return self.__class__.__name__
     
     def __call__(self, p1: euklid.vector.Vector2D, p2: euklid.vector.Vector2D) ->  dict[str, list[euklid.vector.PolyLine2D]]:
-        raise NotImplemented
+        raise NotImplementedError()
     
     def __json__(self) -> dict[str, Any]:
         return {

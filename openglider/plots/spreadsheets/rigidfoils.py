@@ -1,6 +1,10 @@
-from openglider.glider import Glider
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from openglider.utils.table import Table
 
+if TYPE_CHECKING:
+    from openglider.glider import Glider
 
 def get_length_table(glider: Glider) -> Table:
     rib_table = get_rib_length_table(glider)

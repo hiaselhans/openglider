@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from collections.abc import Callable
 
 import euklid
-from openglider.glider.parametric.config import ParametricGliderConfig
+from openglider.glider.parametric.config import ParametricGliderConfig, SewingAllowanceConfig
 from openglider.glider.parametric.table.base.parser import Parser
 import openglider.materials
 import pyfoil
@@ -29,6 +29,7 @@ from openglider.utils.dataclass import dataclass, Field
 from openglider.utils.distribution import Distribution
 from openglider.utils.table import Table
 from openglider.utils.types import CurveType, SymmetricCurveType
+from openglider.vector.unit import Percentage
 
 if TYPE_CHECKING:
     from openglider.glider.curve import GliderCurveType
@@ -49,6 +50,7 @@ class ParametricGlider:
     balloonings: list[BallooningBase]
     ballooning_merge_curve: CurveType
     config: ParametricGliderConfig
+    allowances: SewingAllowanceConfig
     speed: float
     glide: float
     tables: GliderTables = Field(default_factory=lambda: GliderTables())
@@ -148,15 +150,25 @@ class ParametricGlider:
         for cell_no, panel_lst in enumerate(cells):
             panel_lst.clear()
 
-            cuts: list[PanelCut] = self.tables.cuts.get(cell_no, resolvers=resolvers)
+            cuts: list[PanelCut] = self.tables.cuts.get(cell_no, allowance=self.allowances.design, resolvers=resolvers)
 
             all_values = [c.x_left for c in cuts] + [c.x_right for c in cuts]
 
             if -1 not in all_values:
-                cuts.append(PanelCut(x_left=-1, x_right=-1, cut_type=PANELCUT_TYPES.parallel))  # type: ignore
+                cuts.append(PanelCut(
+                    x_left=Percentage(-1),
+                    x_right=Percentage(-1),
+                    cut_type=PANELCUT_TYPES.parallel,
+                    seam_allowance=self.allowances.trailing_edge
+                ))
             
             if 1 not in all_values:
-                cuts.append(PanelCut(x_left=1, x_right=1, cut_type=PANELCUT_TYPES.parallel))  # type: ignore
+                cuts.append(PanelCut(
+                    x_left=Percentage(1),
+                    x_right=Percentage(1),
+                    cut_type=PANELCUT_TYPES.parallel,
+                    seam_allowance=self.allowances.trailing_edge
+                ))
 
             cuts.sort(key=lambda cut: cut.get_average_x())
 
@@ -234,7 +246,7 @@ class ParametricGlider:
         ballooning_merge_curve = euklid.vector.Interpolation(self.ballooning_merge_curve.get_sequence(self.num_interpolate).nodes)
         factors = [ballooning_merge_curve.get_value(abs(x)) for x in self.shape.cell_x_values]
 
-        table = self.tables.ballooning_factors
+        table = self.tables.ballooning_modifiers
 
         if table is not None:
             all_factors = table.get_merge_factors(factors)
@@ -311,7 +323,7 @@ class ParametricGlider:
         result: list[pyfoil.Airfoil] = []
 
         for rib_no, x_value in enumerate(x_values):
-            merge_factor, scale_factor = self.tables.profiles.get_factors(rib_no)
+            merge_factor, scale_factor = self.tables.profile_modifiers.get_factors(rib_no)
 
             if merge_factor is not None:
                 factor = merge_factor
@@ -347,7 +359,7 @@ class ParametricGlider:
 
             profile.name = f"Profile{rib_no+1}"
 
-            if flap := self.tables.profiles.get_flap(rib_no):
+            if flap := self.tables.profile_modifiers.get_flap(rib_no):
                 logger.debug(f"add flap: {flap}")
                 profile = profile.add_flap(**flap)
 
@@ -400,7 +412,7 @@ class ParametricGlider:
 
             chord = abs(front[1]-back[1])
 
-            sharknose = self.tables.profiles.get_sharknose(rib_no, resolvers=resolvers)
+            sharknose = self.tables.profile_modifiers.get_sharknose(rib_no, resolvers=resolvers)
 
             this_rib_holes = self.tables.holes.get(rib_no, resolvers=resolvers)
             this_rigid_foils = self.tables.rigidfoils_rib.get(rib_no, resolvers=resolvers)
@@ -419,7 +431,9 @@ class ParametricGlider:
                 name=f"rib{rib_no}",
                 material=material,
                 sharknose=sharknose,
-                attachment_points=[]
+                attachment_points=[],
+                seam_allowance=self.allowances.general,
+                trailing_edge_extra=self.allowances.trailing_edge
             )
             rib.set_aoa_relative(aoa_values[rib_no])
 
@@ -449,7 +463,7 @@ class ParametricGlider:
                 ballooning=ballooning,
                 name=f"c{cell_no+1}",
                 attachment_points=[],
-                ballooning_modifiers=self.tables.ballooning_factors.get_modifiers(cell_no, resolvers=resolvers)
+                ballooning_modifiers=self.tables.ballooning_modifiers.get_modifiers(cell_no, resolvers=resolvers)
                 )
 
             attachment_points = self.tables.attachment_points_cell.get(cell_no, curves=curves, cell=cell)

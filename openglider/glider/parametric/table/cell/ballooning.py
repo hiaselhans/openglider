@@ -16,7 +16,7 @@ class BallooningRampDTO(DTO):
         return EntryRamp(ramp_distance=self.ramp_distance)
 
 
-class BallooningTable(CellTable):
+class BallooningModifierTable(CellTable):
     keywords: dict[str, Keyword] = {
         "BallooningFactor": Keyword(attributes=["amount_factor"]),
         "BallooningMerge": Keyword(attributes=["merge_factor"]),

@@ -1,15 +1,18 @@
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Dict
+from typing import TYPE_CHECKING
 import ezodf
 
 from openglider.utils.table import Table
 from openglider.lines.line_types.linetype import LineType
-from openglider.glider import GliderProject
 from openglider.plots.spreadsheets.rigidfoils import get_length_table as get_rigidfoils
 from openglider.plots.spreadsheets.straps import get_length_table as get_straps
 from openglider.plots.spreadsheets.material_list import get_material_sheets
 from openglider.plots.usage_stats import MaterialUsage
 
+if TYPE_CHECKING:
+    from openglider.glider import GliderProject
 
 def get_glider_data(project: GliderProject, consumption: dict[str, MaterialUsage]=None) -> ezodf.document.PackagedDocument:
     specsheet = project.get_data_table()

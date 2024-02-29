@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING
 import euklid
 import ezodf
 
-from openglider.glider.ballooning import BallooningBezierNeu
-from openglider.glider.ballooning.old import BallooningBezier
+from openglider.glider.parametric.table.ballooning import BallooningTable
 from openglider.utils.table import Table
 from openglider.utils.types import CurveType
 
@@ -32,12 +31,13 @@ def get_split_tables(project: GliderProject) -> list[Table]:
     tables.append(get_changelog_table(project))
     tables.append(get_parametric_sheet(project.glider))
     tables.append(get_airfoil_sheet(project.glider))
-    tables.append(get_ballooning_sheet(project.glider))
+    tables.append(BallooningTable.from_list(project.glider.balloonings).table)
     tables.append(get_lines_sheet(project.glider))
     
     tables += project.glider.tables.get_all_tables()
 
     tables.append(project.glider.config.get_table())
+    tables.append(project.glider.allowances.get_table())
 
     return tables
 
@@ -78,10 +78,11 @@ def get_glider_tables(glider: ParametricGlider) -> list[Table]:
     tables.append(cell_sheet)
     tables.append(rib_sheet)
     tables.append(get_airfoil_sheet(glider))
-    tables.append(get_ballooning_sheet(glider))
+    tables.append(BallooningTable.from_list(glider.balloonings).table)
     tables.append(get_parametric_sheet(glider))
     tables.append(get_lines_sheet(glider))
     tables.append(glider.config.get_table())
+    tables.append(glider.allowances.get_table())
 
     tables.append(glider.tables.curves.table)
 
@@ -167,31 +168,6 @@ def get_geom_sheet(glider_2d: ParametricGlider) -> Table:
 
     return table
 
-
-def get_ballooning_sheet(glider_2d: ParametricGlider) -> Table:
-    balloonings = glider_2d.balloonings
-    table = Table(name="Balloonings")
-    #row_num = max([len(b.upper_spline.controlpoints)+len(b.lower_spline.controlpoints) for b in balloonings])+1
-    #sheet = ezodf.Sheet(name="Balloonings", size=(row_num, 2*len(balloonings)))
-
-    for ballooning_no, ballooning in enumerate(balloonings):
-        
-        #sheet.append_columns(2)
-        table[0, 2*ballooning_no] = f"ballooning_{ballooning_no}"
-        if isinstance(ballooning, BallooningBezierNeu):
-            table[0, 2*ballooning_no+1] = "V3"
-            pts = list(ballooning.controlpoints)
-        elif isinstance(ballooning, BallooningBezier):
-            table[0, 2*ballooning_no+1] = "V2"
-            pts = list(ballooning.upper_spline.controlpoints) + list(ballooning.lower_spline.controlpoints)
-        else:
-            raise ValueError("Wrong ballooning type")
-
-        for i, point in enumerate(pts):
-            table[i+1, 2*ballooning_no] = point[0]
-            table[i+1, 2*ballooning_no+1] = point[1]
-
-    return table
 
 def get_parametric_sheet(glider : ParametricGlider) -> Table:
     table = Table(name="Parametric")

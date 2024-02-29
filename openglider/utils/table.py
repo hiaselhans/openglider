@@ -50,11 +50,11 @@ class Table:
             x = int((x-1)/base)
         return out[::-1]
 
-    def __init__(self, rows: int=0, columns: int=0, name: str="unnamed"):
+    def __init__(self, rows: int=0, columns: int=0, name: str=None):
         self.dct = {}
         self.num_rows = rows
         self.num_columns = columns
-        self.name=name
+        self.name=name or ""
     
     def __json__(self) -> dict[str, Any]:
         return {
@@ -104,7 +104,7 @@ class Table:
         if to_row is None:
             to_row = self.num_rows
         row_count = to_row - from_row
-        new_table = Table(row_count, self.num_columns)
+        new_table = Table(row_count, self.num_columns, name=self.name)
 
         for i in range(from_row, to_row):
             for column in range(self.num_columns):
@@ -213,9 +213,9 @@ class Table:
 
     @classmethod
     def load(cls, path: str) -> list[Table]:
-        data = pyexcel_ods.get_data(path)
+        data: dict[str, list[list[Any]]] = pyexcel_ods.get_data(path)
 
-        sheets = [cls.from_list(sheet) for sheet in data.values()]
+        sheets = [cls.from_list(sheet, name=name) for name, sheet in data.items()]
         
         return sheets
 
@@ -234,8 +234,8 @@ class Table:
         return table
 
     @classmethod
-    def from_list(cls, lst: list[list[Any]]) -> Table:
-        table = cls()
+    def from_list(cls, lst: list[list[Any]], name: str | None=None) -> Table:
+        table = cls(name=name)
 
         for row_no, row in enumerate(lst):
             for col_no, value in enumerate(row):

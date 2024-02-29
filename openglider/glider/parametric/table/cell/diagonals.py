@@ -1,7 +1,6 @@
 from openglider.glider.cell.diagonals import DiagonalRib, DiagonalSide, TensionLine, TensionStrap
 from openglider.glider.parametric.table.base import CellTable
 from openglider.glider.parametric.table.base.dto import DTO, CellTuple
-from openglider.utils.table import Table
 
 import logging
 
@@ -68,18 +67,6 @@ class TensionLineDTO(DTO):
         return TensionLine(self.position.first, self.position.second)
 
 class DiagonalTable(CellTable):
-
-    def __init__(self, table: Table=None, file_version: int=None, migrate: bool=False):
-        if file_version == 1:
-            pass
-            # height (0,1) -> (-1,1)
-            # TODO
-            #height1 = height1 * 2 - 1
-            #height2 = height2 * 2 - 1
-
-        super().__init__(table, migrate_header=migrate)
-
-
     dtos = {
         "QR": QRDTO,
         "DIAGONAL": DiagonalDTO,

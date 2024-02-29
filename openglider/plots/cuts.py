@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class CutResult(BaseModel):
-    curve: euklid.vector.PolyLine2D
+    outline: euklid.vector.PolyLine2D
     index_left: float
     index_right: float
     inner_indices: list[float]
@@ -19,11 +19,26 @@ class CutResult(BaseModel):
     def __init__(self, curve: euklid.vector.PolyLine2D, index_left: float, index_right: float, inner_indices: list[float]):
         # WHY????
         super().__init__(  # type: ignore
-            curve=curve,
+            outline=curve,
             index_left = index_left,
             index_right = index_right,
             inner_indices = inner_indices
         )
+
+    def get_inner_index(self, y: float) -> float:
+        divisor = len(self.inner_indices)-1
+
+        for i in range(divisor):
+            y1 = i / divisor
+            y2 = (i+1) / divisor
+
+            if y2 > y:
+                break
+        
+        x1 = self.inner_indices[i]
+        x2 = self.inner_indices[i+1]
+        
+        return x1 + (y-y1) / (y2-y1) * (x2-x1)
 
 InnerLists = list[tuple[euklid.vector.PolyLine2D, float]]
 

@@ -10,7 +10,6 @@ from openglider.airfoil.profile_3d import Profile3D
 import openglider.mesh as mesh
 from openglider.airfoil import get_x_value
 from openglider.materials import Material, cloth
-from openglider.mesh.mesh import Vertex
 from openglider.utils.cache import cached_function, hash_list
 from openglider.utils.dataclass import BaseModel, Field
 from openglider.vector.unit import Length, Percentage
@@ -34,9 +33,9 @@ class PanelCut(BaseModel):
     x_left: Percentage
     x_right: Percentage
     cut_type: PANELCUT_TYPES
+    seam_allowance: Length = Field(default_factory=lambda: Length(0))
     cut_3d_amount: list[float] = Field(default_factory=lambda: [0, 0])
     x_center: Percentage | None = None
-    seam_allowance: Length | None = None
 
     def __json__(self) -> dict[str, Any]:
         return {
@@ -237,12 +236,14 @@ class Panel(BaseModel):
             PanelCut(
                 x_left=top,
                 x_right=top,
-                cut_type=PANELCUT_TYPES.parallel
+                cut_type=PANELCUT_TYPES.parallel,
+                seam_allowance=Length("1cm")
                 ),
             PanelCut(
                 x_left=bottom,
                 x_right=bottom,
-                cut_type=PANELCUT_TYPES.parallel
+                cut_type=PANELCUT_TYPES.parallel,
+                seam_allowance=Length("1cm")
                 )
         )
     
@@ -346,7 +347,6 @@ class Panel(BaseModel):
         points = [mesh.Vertex(*p) for p in nodes]
 
         polygons = []
-        lines: list[list[tuple[Vertex, Vertex]]] = []
 
         # helper functions
         def left_triangle(l_i: int, r_i: int) -> list[mesh.Polygon]:

@@ -31,7 +31,7 @@ class Sharknose8(SharknoseDTO):
     rigidfoil_circle_radius: Length
     rigidfoil_circle_amount: Length
 
-class ProfileTable(RibTable):
+class ProfileModifierTable(RibTable):
     keywords = {
         "ProfileFactor": Keyword(attributes=["thickness_factor"], target_cls=FloatDict),
         "ProfileMerge": Keyword(attributes=["merge_factor"], target_cls=FloatDict),
@@ -43,29 +43,6 @@ class ProfileTable(RibTable):
         "Sharknose8": Sharknose8,
     }
 
-    def get_merge_factors(self, merge_factor_list: list[float]) -> list[tuple[float, float]]:
-        # TODO: unused!
-        merge_factors = merge_factor_list[:]
-
-        columns = self.get_columns(self.table, "BallooningMerge", 1)
-        if len(columns):
-            for i in range(len(merge_factors)):
-                for column in columns:
-                    value = column[i+1, 0]
-                    if value is not None:
-                        merge_factors[i] = value
-
-        multipliers = [1] * len(merge_factors)
-        columns = self.get_columns(self.table, "BallooningFactor", 1)
-
-        for i in range(len(merge_factors)):
-            for column in columns:
-                value = column[i+1, 0]
-                if value is not None:
-                    multipliers[i] = value
-        
-        return list(zip(merge_factors, multipliers))
-    
     def get_sharknose(self, row_no: int, **kwargs: Any) -> Sharknose | None:
         return self.get_one(row_no, keywords=["Sharknose", "Sharknose8"], **kwargs)
 

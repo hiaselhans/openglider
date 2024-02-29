@@ -10,7 +10,7 @@ from openglider.airfoil import get_x_value
 from openglider.glider.cell.cell import FlattenedCell
 from openglider.glider.cell.panel import Panel, PANELCUT_TYPES
 from openglider.plots.config import PatternConfig
-from openglider.plots.cuts import Cut
+from openglider.plots.cuts import Cut, CutResult
 from openglider.plots.glider.diagonal import DribPlot, StrapPlot
 from openglider.plots.glider.minirib import MiniRibPlot
 from openglider.plots.usage_stats import MaterialUsage
@@ -18,7 +18,7 @@ from openglider.utils.cache import cached_property
 from openglider.utils.config import Config
 from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
-from openglider.vector.unit import Length, Percentage
+from openglider.vector.unit import Percentage
 
 if TYPE_CHECKING:
     from openglider.glider.cell import Cell
@@ -52,15 +52,6 @@ class PanelPlot:
     def flatten(self) -> PlotPart:
         plotpart = PlotPart(material_code=str(self.panel.material), name=self.panel.name)
 
-        cut_allowances = {
-            PANELCUT_TYPES.folded: self.config.allowance_entry_open,
-            PANELCUT_TYPES.parallel: self.config.allowance_trailing_edge,
-            PANELCUT_TYPES.orthogonal: self.config.allowance_design,
-            PANELCUT_TYPES.singleskin: self.config.allowance_entry_open,
-            PANELCUT_TYPES.cut_3d: self.config.allowance_design,
-            PANELCUT_TYPES.round: self.config.allowance_design
-        }
-
         cut_types: dict[PANELCUT_TYPES, type[Cut]] = {
             PANELCUT_TYPES.folded: self.config.cut_entry,
             PANELCUT_TYPES.parallel: self.config.cut_trailing_edge,
@@ -73,16 +64,8 @@ class PanelPlot:
         ik_front = self.panel.cut_front._get_ik_values(self.cell, x_values=self.config.midribs, exact=True)
         ik_back = self.panel.cut_back._get_ik_values(self.cell, x_values=self.config.midribs, exact=True)
 
-        # get seam allowance
-        if self.panel.cut_front.seam_allowance is not None:
-            allowance_front: Length = -self.panel.cut_front.seam_allowance
-        else:
-            allowance_front = Length(-cut_allowances[self.panel.cut_front.cut_type])
-        
-        if self.panel.cut_back.seam_allowance is not None:
-            allowance_back: Length = self.panel.cut_back.seam_allowance
-        else:
-            allowance_back = Length(cut_allowances[self.panel.cut_back.cut_type])
+        allowance_front = -self.panel.cut_front.seam_allowance
+        allowance_back = self.panel.cut_back.seam_allowance
 
         # cuts -> cut-line, index left, index right
         self.cut_front = cut_types[self.panel.cut_front.cut_type](amount=allowance_front)
@@ -106,8 +89,8 @@ class PanelPlot:
         left = inner_front[0][0].get(inner_front[0][1], inner_back[0][1])
         right = inner_front[-1][0].get(inner_front[-1][1], inner_back[-1][1])
 
-        outer_left = left.offset(-self.config.allowance_general)
-        outer_right = right.offset(self.config.allowance_general)
+        outer_left = left.offset(-self.cell.rib1.seam_allowance.si)
+        outer_right = right.offset(self.cell.rib2.seam_allowance.si)
 
         cut_front_result = self.cut_front.apply(inner_front, outer_left, outer_right, shape_3d_amount_front)
         cut_back_result = self.cut_back.apply(inner_back, outer_left, outer_right, shape_3d_amount_back)
@@ -115,12 +98,12 @@ class PanelPlot:
         panel_left: euklid.vector.PolyLine2D | None = None
         if cut_front_result.index_left < cut_back_result.index_left:
             panel_left = outer_left.get(cut_front_result.index_left, cut_back_result.index_left).fix_errors()
-        panel_back = cut_back_result.curve.copy()
+        panel_back = cut_back_result.outline.copy()
 
         panel_right: euklid.vector.PolyLine2D | None = None
         if cut_back_result.index_right > cut_front_result.index_right:
             panel_right = outer_right.get(cut_back_result.index_right, cut_front_result.index_right).fix_errors()
-        panel_front = cut_front_result.curve.copy()
+        panel_front = cut_front_result.outline.copy()
 
         # spitzer schnitt
         # rechts
@@ -192,8 +175,8 @@ class PanelPlot:
         self._insert_controlpoints(plotpart)
         self._insert_attachment_points(plotpart)
         self._insert_diagonals(plotpart)
-        self._insert_rigidfoils(plotpart)
-        self._insert_miniribs(plotpart)
+        self._insert_rigidfoils(plotpart, cut_front_result, cut_back_result)
+        self._insert_miniribs(plotpart, cut_front_result, cut_back_result)
 
         self._align_upright(plotpart)
 
@@ -242,7 +225,7 @@ class PanelPlot:
 
             return p1, p2
         
-        raise ValueError(f"not in range")
+        raise ValueError("not in range")
 
     def insert_mark(
         self,
@@ -285,13 +268,15 @@ class PanelPlot:
 
     def _insert_text(self, plotpart: PlotPart) -> None:
         text = self.panel.name
-        text_width = self.config.allowance_design * 0.8 * len(text)
 
         if self.config.layout_seperate_panels and not self.panel.is_lower():
+            allowance = self.panel.cut_back.seam_allowance
             curve = self.panel.cut_back.get_curve_2d(self.cell, self.config.midribs, exact=True)
         else:
+            allowance = self.panel.cut_front.seam_allowance
             curve = self.panel.cut_front.get_curve_2d(self.cell, self.config.midribs, exact=True).reverse()
 
+        text_width = allowance.si * 0.8 * len(text)
         ik_p1 = curve.walk(0, curve.get_length()*0.15)
 
         p1 = curve.get(ik_p1)
@@ -474,18 +459,24 @@ class PanelPlot:
                                                         size=0.01,  # 1cm
                                                         align=text_align, valign=0, height=0.8).get_vectors()  # type: ignore
                         
-    def draw_straight_line(self, y: float, start: float, end: float) -> euklid.vector.PolyLine2D | None:
+    def draw_straight_line(
+            self,
+            y: float,
+            start: float,
+            end: float,
+            cut_front_result: CutResult,
+            cut_back_result: CutResult
+            ) -> euklid.vector.PolyLine2D | None:
         logger.warning(f"straight line {y} {start} {end}")
         if start > max(self.panel.cut_back.x_left, self.panel.cut_back.x_right):
             return None
         if end < min(self.panel.cut_front.x_left, self.panel.cut_front.x_right):
             return None
-        
-        
+
         flattened_cell = self.cell.get_flattened_cell()
 
-        ik_min = self.panel.cut_front._get_ik_values(self.cell, x_values=[y], exact=False)[0]
-        ik_max = self.panel.cut_back._get_ik_values(self.cell, x_values=[y], exact=False)[0]
+        ik_min = cut_front_result.get_inner_index(y)
+        ik_max = cut_back_result.get_inner_index(y)
 
         line = flattened_cell.at_position(Percentage(y))
 
@@ -503,9 +494,9 @@ class PanelPlot:
         
         return None
     
-    def _insert_rigidfoils(self, plotpart: PlotPart) -> None:
+    def _insert_rigidfoils(self, plotpart: PlotPart, cut_front_result: CutResult, cut_back_result: CutResult) -> None:
         for rigidfoil in self.cell.rigidfoils:
-            line = self.draw_straight_line(rigidfoil.y, rigidfoil.x_start, rigidfoil.x_end)
+            line = self.draw_straight_line(rigidfoil.y, rigidfoil.x_start, rigidfoil.x_end, cut_front_result, cut_back_result)
             if line is not None:
                 plotpart.layers["marks"].append(line)
 
@@ -513,11 +504,18 @@ class PanelPlot:
                 plotpart.layers["L0"].append(euklid.vector.PolyLine2D([line.get(0)]))
                 plotpart.layers["L0"].append(euklid.vector.PolyLine2D([line.get(len(line)-1)]))
 
-    def _insert_miniribs(self, plotpart: PlotPart) -> None:
+    def _insert_miniribs(self, plotpart: PlotPart, cut_front_result: CutResult, cut_back_result: CutResult) -> list[tuple[float, float]]:
+        result: list[tuple[float, float]] = []
         for minirib in self.cell.miniribs:
+
             back_cut = minirib.back_cut or 1.
-            line1 = self.draw_straight_line(minirib.yvalue, -back_cut, -minirib.front_cut)
-            line2 = self.draw_straight_line(minirib.yvalue, minirib.front_cut, back_cut)
+            line1 = self.draw_straight_line(minirib.yvalue, -back_cut, -minirib.front_cut, cut_front_result, cut_back_result)
+            line2 = self.draw_straight_line(minirib.yvalue, minirib.front_cut, back_cut, cut_front_result, cut_back_result)
+
+            result.append((
+                line1 and line1.get_length() or 0.,
+                line2 and line2.get_length() or 0.
+            ))
 
             for line in (line1, line2):
                 if line is not None:
@@ -526,6 +524,8 @@ class PanelPlot:
                     # laser dots
                     plotpart.layers["L0"].append(euklid.vector.PolyLine2D([line.get(0)]))
                     plotpart.layers["L0"].append(euklid.vector.PolyLine2D([line.get(len(line)-1)]))
+
+        return result
 
 
 class FlattenedCellWithAllowance(FlattenedCell):
@@ -561,18 +561,21 @@ class CellPlotMaker:
 
         self._flattened_cell = None
     
-    @cached_property("cell", "config.allowance_general", "config.midribs")
+    @cached_property("cell", "config.midribs")
     def flattened_cell(self) -> FlattenedCellWithAllowance:
         flattened_cell = self.cell.get_flattened_cell(self.config.midribs)
 
         left_bal, right_bal = flattened_cell.ballooned
 
-        outer_left = left_bal.offset(-self.config.allowance_general)
-        outer_right = right_bal.offset(self.config.allowance_general)
+        allowance_left = self.cell.rib1.seam_allowance.si
+        allowance_right = self.cell.rib2.seam_allowance.si
+
+        outer_left = left_bal.offset(-allowance_left)
+        outer_right = right_bal.offset(allowance_right)
 
         outer_orig = (
-            left_bal.offset(-self.config.allowance_general, simple=True),
-            right_bal.offset(self.config.allowance_general, simple=True)
+            left_bal.offset(-allowance_left, simple=True),
+            right_bal.offset(allowance_right, simple=True)
         )
 
         outer = (

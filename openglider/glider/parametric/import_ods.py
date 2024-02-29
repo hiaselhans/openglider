@@ -3,20 +3,18 @@ from __future__ import annotations
 import logging
 import math
 import numbers
-import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import euklid
 import pyfoil
 
-from openglider.glider.ballooning import BallooningBezier, BallooningBezierNeu
-from openglider.glider.ballooning.base import BallooningBase
 from openglider.glider.parametric.arc import ArcCurve
-from openglider.glider.parametric.config import ParametricGliderConfig
+from openglider.glider.parametric.config import ParametricGliderConfig, SewingAllowanceConfig
 from openglider.glider.parametric.shape import ParametricShape
 from openglider.glider.parametric.table import GliderTables
 from openglider.glider.parametric.table.attachment_points import AttachmentPointTable, CellAttachmentPointTable
-from openglider.glider.parametric.table.cell.ballooning import BallooningTable
+from openglider.glider.parametric.table.ballooning import BallooningTable, transpose_columns
+from openglider.glider.parametric.table.cell.ballooning import BallooningModifierTable
 from openglider.glider.parametric.table.cell.cuts import CutTable
 from openglider.glider.parametric.table.cell.diagonals import DiagonalTable, StrapTable
 from openglider.glider.parametric.table.cell.miniribs import MiniRibTable
@@ -24,7 +22,7 @@ from openglider.glider.parametric.table.curve import CurveTable
 from openglider.glider.parametric.table.lines import LineSetTable
 from openglider.glider.parametric.table.material import CellClothTable, RibClothTable
 from openglider.glider.parametric.table.rib.holes import HolesTable
-from openglider.glider.parametric.table.rib.profile import ProfileTable
+from openglider.glider.parametric.table.rib.profile import ProfileModifierTable
 from openglider.glider.parametric.table.rib.rib import SingleSkinTable
 from openglider.glider.parametric.table.rigidfoil import CellRigidTable, RibRigidTable
 from openglider.utils import linspace
@@ -37,95 +35,64 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+class TableNames:
+    cell_sheet = "Cell Elements"
+    rib_sheet = "Rib Elements"
+    parametric_data = "Parametric"
+
+
 def import_ods_2d(cls: type[ParametricGlider], filename: str) -> ParametricGlider:
     logger.info(f"Import file: {filename}")
     tables = Table.load(filename)
 
     return import_ods_glider(cls, tables)
-    
+
+
 def import_ods_glider(cls: type[ParametricGlider], tables: list[Table]) -> ParametricGlider:
+    table_dct: dict[str, Table] = {
+        TableNames.cell_sheet: tables[1],
+        TableNames.rib_sheet: tables[2]
+    }
+
+    for table in tables[3:]:
+        if table.name in table_dct:
+            raise ValueError(f"{table.name} already in tables")
+        table_dct[table.name] = table
+
     cell_sheet = tables[1]
     rib_sheet = tables[2]
 
     config = ParametricGliderConfig.read_table(tables[7])
+    sewing_allowances = SewingAllowanceConfig.read_table(table_dct.get(SewingAllowanceConfig.table_name, Table()))
 
-    # file-version
-    file_version_match = re.match(r"V([0-9]*)", str(cell_sheet["A1"]))
-    file_version_2_match = re.match(r"V_([0-9\.]*)", str(cell_sheet["A1"]))
-    
-    if file_version_2_match:
-        file_version = 4
-    elif file_version_match:
-        file_version = int(file_version_match.group(1))
-    else:
-        file_version = 1
-    logger.info(f"Loading file version {file_version}")
+
+    logger.info(f"Loading file version {config.version}")
     # ------------
 
     # profiles = [BezierProfile2D(profile) for profile in transpose_columns(sheets[3])]
     profiles = [pyfoil.Airfoil(profile, name).normalized() for name, profile in transpose_columns(tables[3])]
 
-    if file_version > 2:
+    if config.version > "0.0.1":
         has_center_cell = not tables[0]["C2"] == 0
         cell_no = (tables[0].num_rows - 2) * 2 + has_center_cell
-        geometry = get_geometry_parametric(tables[5], cell_no, config)
+        geometry = get_geometry_parametric(table_dct[TableNames.parametric_data], cell_no, config)
     else:
         geometry = get_geometry_explicit(tables[0], config)
         has_center_cell = geometry.shape.has_center_cell
 
-    balloonings: list[BallooningBase] = []
-    for i, (name, baloon) in enumerate(transpose_columns(tables[4])):
-        ballooning_type = (tables[4][0, 2*i+1] or "").upper()
-        if baloon:
-            if ballooning_type == "V1":
-                i = 0
-                while baloon[i + 1][0] > baloon[i][0]:
-                    i += 1
-
-                upper = [euklid.vector.Vector2D(p) for p in baloon[:i + 1]]
-                lower = [euklid.vector.Vector2D([x, -y]) for x, y in baloon[i + 1:]]
-
-                ballooning = BallooningBezier(upper, lower, name=name)
-                balloonings.append(BallooningBezierNeu.from_classic(ballooning))
-
-            elif ballooning_type == "V2":
-                i = 0
-                while baloon[i + 1][0] > baloon[i][0]:
-                    i += 1
-
-                upper = baloon[:i + 1]
-                lower = baloon[i + 1:]
-
-                ballooning = BallooningBezier(upper, lower, name=name)
-                balloonings.append(BallooningBezierNeu.from_classic(ballooning))
-
-            elif ballooning_type == "V3":
-                balloonings.append(BallooningBezierNeu(baloon))
-
-            else:
-                raise ValueError("No ballooning type specified")
-
-
-
-    if len(tables) > 8:
-        curves_table = tables[8]
-    else:
-        curves_table = None
-    
-    curves = CurveTable(curves_table)
+    balloonings = BallooningTable(table=table_dct[BallooningTable.table_name])
 
     attachment_points_lower = config.get_lower_attachment_points()
-
-    lineset_table = LineSetTable(table=tables[6], lower_attachment_points=attachment_points_lower)
+    lineset_table = LineSetTable(table=table_dct[LineSetTable.table_name], lower_attachment_points=attachment_points_lower)
 
     migrate_header = cell_sheet[0, 0] is not None and cell_sheet[0, 0] < "V4"
 
     glider_tables = GliderTables()
-    glider_tables.curves = curves
+    glider_tables.curves = CurveTable(table_dct.get("Curves", None))
     glider_tables.cuts = CutTable(cell_sheet, migrate_header=migrate_header)
-    glider_tables.ballooning_factors = BallooningTable(cell_sheet, migrate_header=migrate_header)
+    glider_tables.ballooning_modifiers = BallooningModifierTable(cell_sheet, migrate_header=migrate_header)
     glider_tables.holes = HolesTable(rib_sheet, migrate_header=migrate_header)
-    glider_tables.diagonals = DiagonalTable(cell_sheet, file_version, migrate=migrate_header)
+    glider_tables.diagonals = DiagonalTable(cell_sheet, migrate_header=migrate_header)
     glider_tables.rigidfoils_rib = RibRigidTable(rib_sheet, migrate_header=migrate_header)
     glider_tables.rigidfoils_cell = CellRigidTable(cell_sheet, migrate_header=migrate_header)
     glider_tables.straps = StrapTable(cell_sheet, migrate_header=migrate_header)
@@ -133,14 +100,15 @@ def import_ods_glider(cls: type[ParametricGlider], tables: list[Table]) -> Param
     glider_tables.material_ribs = RibClothTable(rib_sheet, migrate_header=migrate_header)
     glider_tables.miniribs = MiniRibTable(cell_sheet, migrate_header=migrate_header)
     glider_tables.rib_modifiers = SingleSkinTable(rib_sheet, migrate_header=migrate_header)
-    glider_tables.profiles = ProfileTable(rib_sheet, migrate_header=migrate_header)
+    glider_tables.profile_modifiers = ProfileModifierTable(rib_sheet, migrate_header=migrate_header)
     glider_tables.attachment_points_rib = AttachmentPointTable(rib_sheet, migrate_header=migrate_header)
     glider_tables.attachment_points_cell = CellAttachmentPointTable(cell_sheet, migrate_header=migrate_header)
     glider_tables.lines = lineset_table
     
     glider_2d = cls(tables=glider_tables,
                          profiles=profiles,
-                         balloonings=balloonings,
+                         balloonings=balloonings.get(),
+                         allowances=sewing_allowances,
                          config=config,
                          speed=config.speed,
                          glide=config.glide,
@@ -283,33 +251,3 @@ def get_geometry_parametric(table: Table, cell_num: int, config: ParametricGlide
         arc=arc_curve,
         **data
     )
-
-
-def transpose_columns(sheet: Table, columnswidth: int=2) -> list[tuple[str, Any]]:
-    num_columns = sheet.num_columns
-    num_elems = num_columns // columnswidth
-    # if num % columnswidth > 0:
-    #    raise ValueError("irregular columnswidth")
-    result = []
-    for col in range(num_elems):
-        first_column = col * columnswidth
-        last_column = (col + 1) * columnswidth
-        columns = range(first_column, last_column)
-        name = sheet[0, first_column]
-        if not isinstance(name, numbers.Number):  # py2/3: str!=unicode
-            start = 1
-        else:
-            name = "unnamed"
-            start = 0
-
-        element = []
-
-        for i in range(start, sheet.num_rows):
-            row = [sheet[i, j] for j in columns]
-            if all([j is None for j in row]):  # Break at empty line
-                break
-            if not all([isinstance(j, numbers.Number) for j in row]):
-                raise ValueError(f"Invalid value at row {i}: {row}")
-            element.append(row)
-        result.append((name, element))
-    return result

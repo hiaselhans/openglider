@@ -88,6 +88,7 @@ class DiagonalRib(BaseModel):
     name: str="unnamed"
 
     num_folds: int=1
+    fold_allowance: Length = Length("10mm")
 
     hole_num: int=0
     hole_border_side :float=0.2

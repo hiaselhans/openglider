@@ -1,7 +1,7 @@
 from __future__ import annotations
 import collections
 import logging
-from typing import Any, Dict, List, Optional, TypeAlias
+from typing import Any, TypeAlias
 from openglider.glider.cell.cell import Cell
 from openglider.glider.glider import Glider
 from openglider.utils.config import Config
@@ -13,6 +13,7 @@ from openglider.plots.glider.minirib import MiniRibPlot
 from openglider.plots.config import PatternConfig
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.vector.drawing.part import PlotPart
+from openglider.vector.unit import Length
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class PlotMaker:
     straps: PlotPartDict
     rigidfoils: PlotPartDict
     miniribs: PlotPartDict
+    seam_allowance: Length
 
     DefaultConf: TypeAlias = PatternConfig
     CellPlotMaker: TypeAlias = DefaultCellPlotMaker

@@ -1,15 +1,81 @@
 import re
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
 import euklid
 
 from openglider.lines.node import Node
 from openglider.utils.dataclass import BaseModel
 from openglider.utils.table import Table
+from openglider.vector import unit
+from openglider.vector.unit import Length
 from openglider.version import __version__
 
+class ConfigTable(BaseModel):
+    @classmethod
+    def _migrate_table(cls, data: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        return data
+    
+    @classmethod
+    def read_table(cls, table: Table) -> Self:
+        raw_data = {}
+        for current_row in range(1, table.num_rows):
+            key = str(table[current_row, 0]).lower()
+            if key:
+                raw_data[key] = [table[current_row, i] for i in range(1, table.num_columns)]
+        
+        raw_data = cls._migrate_table(raw_data)
+        data = {}
 
-class ParametricGliderConfig(BaseModel):
+        for key, value in raw_data.items():
+            if key in cls.model_fields:
+                target_type = cls.model_fields[key].annotation
+                assert target_type is not None
+
+                if target_type == euklid.vector.Vector3D:
+                    data_length = 3
+                else:
+                    data_length = 1
+                
+
+                if data_length == 1:
+                    data[key] = target_type(value[0])
+                else:
+                    data[key] = target_type(value)
+
+        return cls(**data)
+    
+    table_name: ClassVar[str] = "Data"
+    def get_table(self) -> Table:
+        table = Table(name=self.table_name)
+        table[0,0] = "Key"
+        table[0,1] = "Values"
+
+        #dct = self.model_dump()
+        for i, (key, value) in enumerate(self):
+            if isinstance(value, euklid.vector.Vector3D):
+                value = list(value)
+            elif isinstance(value, unit.Quantity):
+                value = [str(value)]
+            else:
+                value = [value]
+            
+            table[i+1, 0] = key
+            for column, column_value in enumerate(value):
+                table[i+1,column+1] = column_value
+
+        return table
+
+class SewingAllowanceConfig(ConfigTable):
+    table_name = "Sewing Allowance"
+
+    general: Length = Length("10mm")
+    design: Length = Length("10mm")
+    trailing_edge: Length = Length("10mm")
+
+
+class ParametricGliderConfig(ConfigTable):
+    table_name = "Data"
+
     speed: float
     glide: float
 
@@ -45,52 +111,28 @@ class ParametricGliderConfig(BaseModel):
         return {
             name: Node(name=name, node_type=Node.NODE_TYPE.LOWER, position=position) for name, position in points.items()
         }
-
+    
     @classmethod
-    def read_table(cls, table: Table) -> Self:
-        data = {}
+    def _migrate_table(cls, data: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        if (stabicell := data.pop("stabicell", None)) is not None:
+            data["has_stabicell"] = stabicell
+
+
         node_data: dict[str, dict[str, float]] = {}
+        node_keywords = []
 
-        migrations = {
-            "stabicell": "has_stabicell"
-        }
+        for keyword in data:
+            # OLD data migration
+            if match := re.match(r"ahp([xyz])(.*)", keyword):
+                node_keywords.append(keyword)
+                coordinate, node_name = match.groups()
+                node_data.setdefault(node_name, {})
+                node_data[node_name][coordinate] = float(data[keyword][0])
 
-        current_row = 1
-        while current_row < table.num_rows:
-            key = str(table[current_row, 0]).lower()
-
-            if key in migrations:
-                key = migrations[key]
-
-            if key in cls.model_fields:
-                target_type = cls.model_fields[key].annotation
-                assert target_type is not None
-
-                if target_type == euklid.vector.Vector3D:
-                    data_length = 3
-                else:
-                    data_length = 1
-                
-                field_data = [table[current_row, 1+i] for i in range(data_length)]
-                current_row += 1
-
-                if data_length == 1:
-                    data[key] = target_type(field_data[0])
-                else:
-                    data[key] = target_type(field_data)
-                
+        if node_keywords:
+            for keyword in node_keywords:
+                data.pop(keyword)
             
-            else:
-                # OLD data migration
-                if match := re.match(r"ahp([xyz])(.*)", key):
-                    coordinate, node_name = match.groups()
-                    node_data.setdefault(node_name, {})
-                    node_data[node_name][coordinate] = float(table[current_row, 1])
-                else:
-                    raise ValueError(f"could not match value: {key} {current_row}")
-                current_row += 1
-        
-        if len(node_data) == 2:
             nodes = [
                 (name, euklid.vector.Vector3D([node["x"], node["y"], node["z"]]))
                 for name, node in node_data.items()
@@ -99,27 +141,9 @@ class ParametricGliderConfig(BaseModel):
             if nodes[0][1][2] > nodes[1][1][2]:
                 nodes = [nodes[1], nodes[0]]
             
-            data["pilot_position"] = nodes[0][1]
-            data["pilot_position_name"] = nodes[0][0]
-            data["brake_offset"] = nodes[1][1] - nodes[0][1]
-            data["brake_name"] = nodes[1][0]
-
-        return cls(**data)
-    
-    def get_table(self) -> Table:
-        table = Table(name="Data")
-        table[0,0] = "Key"
-        table[0,1] = "Values"
-
-        dct = self.model_dump()
-        for i, (key, value) in enumerate(dct.items()):
-            if isinstance(value, euklid.vector.Vector3D):
-                value = list(value)
-            else:
-                value = [value]
-            
-            table[i+1, 0] = key
-            for column, column_value in enumerate(value):
-                table[i+1,column+1] = column_value
-
-        return table
+            data["pilot_position"] = list(nodes[0][1])
+            data["pilot_position_name"] = [nodes[0][0]]
+            data["brake_offset"] = list(nodes[1][1] - nodes[0][1])
+            data["brake_name"] = [nodes[1][0]]
+        
+        return data

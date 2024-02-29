@@ -7,7 +7,7 @@ import openglider
 from openglider.glider.rib.rib import Rib
 from openglider.glider.rib.crossports import RibHole
 from openglider.materials import cloth
-from openglider.vector.unit import Percentage
+from openglider.vector.unit import Length, Percentage
 
 class TestRib(unittest.TestCase):
 
@@ -21,7 +21,10 @@ class TestRib(unittest.TestCase):
                        arcang=random.random(),
                        aoa_absolute=random.random(),
                        glide=random.random()*10,
-                       material=cloth.get("default"))
+                       material=cloth.get("default"),
+                       seam_allowance=Length("10mm"),
+                       trailing_edge_extra=None
+                       )
 
     #def test_normvectors(self) -> None:
 

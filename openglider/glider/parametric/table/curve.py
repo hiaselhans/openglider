@@ -41,7 +41,7 @@ class CurveTable:
             
             try:
                 curve_cls = getattr(openglider.glider.curve, curve_type)
-            except:
+            except Exception:
                 raise Exception(f"invalid curve type: {curve_type}")
             curves[name] = curve_cls(points, shape)
 

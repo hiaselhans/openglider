@@ -133,7 +133,7 @@ class FreeCADFile:
                 for i, factor in enumerate(values):
                     table[i+1, 0] = factor
                 
-                parametric_glider.tables.ballooning_factors.table.append_right(table)
+                parametric_glider.tables.ballooning_modifiers.table.append_right(table)
             
             elif classname == "SingleSkinRibFeature":
                 ribs = self.get_ribs_property(parametric_glider, obj_name)
@@ -180,7 +180,7 @@ class FreeCADFile:
                     table[rib_no+1, 0] = flap_begin
                     table[rib_no+1, 1] = flap_amount
                 
-                parametric_glider.tables.profiles.table.append_right(table)
+                parametric_glider.tables.profile_modifiers.table.append_right(table)
             
             elif classname == "HoleFeature":
                 ribs = self.get_ribs_property(parametric_glider, obj_name)

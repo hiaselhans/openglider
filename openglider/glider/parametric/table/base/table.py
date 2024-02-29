@@ -165,7 +165,7 @@ class ElementTable(Generic[ElementType]):
             return keyword_mapper.get(keyword, data)
         
         elif keyword in self.dtos:
-            dto = self.dtos[keyword]            
+            dto = self.dtos[keyword]
             dct = self._prepare_dto_data(row, dto, data, kwargs["resolvers"])
                 
             return dto(**dct).get_object()

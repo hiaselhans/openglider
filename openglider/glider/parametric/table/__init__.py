@@ -1,10 +1,10 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any
 from openglider.glider.parametric.table.base.table import ElementTable
 from openglider.glider.parametric.table.lines import LineSetTable
 
 from openglider.glider.parametric.table.attachment_points import AttachmentPointTable, CellAttachmentPointTable
-from openglider.glider.parametric.table.cell.ballooning import BallooningTable
+from openglider.glider.parametric.table.cell.ballooning import BallooningModifierTable
 from openglider.glider.parametric.table.cell.cuts import CutTable
 from openglider.glider.parametric.table.cell.diagonals import DiagonalTable, StrapTable
 from openglider.glider.parametric.table.cell.miniribs import MiniRibTable
@@ -12,7 +12,7 @@ from openglider.glider.parametric.table.curve import CurveTable
 from openglider.glider.parametric.table.base import TableType
 from openglider.glider.parametric.table.material import CellClothTable, RibClothTable
 from openglider.glider.parametric.table.rib.holes import HolesTable
-from openglider.glider.parametric.table.rib.profile import ProfileTable
+from openglider.glider.parametric.table.rib.profile import ProfileModifierTable
 from openglider.glider.parametric.table.rib.rib import SingleSkinTable
 from openglider.glider.parametric.table.rigidfoil import CellRigidTable, RibRigidTable
 from openglider.utils.table import Table
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class GliderTables:
     curves: CurveTable
     cuts: CutTable
-    ballooning_factors: BallooningTable
+    ballooning_modifiers: BallooningModifierTable
     holes: HolesTable
     diagonals: DiagonalTable
     straps: StrapTable
@@ -34,7 +34,7 @@ class GliderTables:
     material_ribs: RibClothTable
     miniribs: MiniRibTable
     rib_modifiers: SingleSkinTable
-    profiles: ProfileTable
+    profile_modifiers: ProfileModifierTable
     attachment_points_rib: AttachmentPointTable
     attachment_points_cell: CellAttachmentPointTable
     lines: LineSetTable
@@ -90,7 +90,7 @@ class GliderTables:
         table.name = "Rib Elements"
         table[0,0] = f"V_{__version__}"
 
-        table.append_right(self.profiles.table)
+        table.append_right(self.profile_modifiers.table)
         table.append_right(self.holes.table)
         table.append_right(self.attachment_points_rib.table)
         table.append_right(self.rigidfoils_rib.table)
@@ -114,7 +114,7 @@ class GliderTables:
         table.append_right(self.material_cells.table)
         table.append_right(self.miniribs.table)
         table.append_right(self.attachment_points_cell.table)
-        table.append_right(self.ballooning_factors.table)
+        table.append_right(self.ballooning_modifiers.table)
 
         for i in range(1, table.num_rows+1):
             table[i, 0] = str(i)

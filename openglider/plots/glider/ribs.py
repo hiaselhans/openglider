@@ -68,9 +68,9 @@ class RigidFoilPlot:
         curve = self.rigidfoil.get_flattened(self.ribplot.rib, glider)
 
         distance = self.ribplot.rib.convert_to_chordlength(self.rigidfoil.distance)
-        d_outer = self.ribplot.config.allowance_general + distance.si
+        d_outer = self.ribplot.rib.seam_allowance.si + distance.si
 
-        inner_curve = curve.offset(-self.ribplot.config.allowance_general).fix_errors()
+        inner_curve = curve.offset(-self.ribplot.rib.seam_allowance.si).fix_errors()
         outer_curve = curve.offset(d_outer).fix_errors()
 
         return inner_curve, outer_curve
@@ -151,7 +151,7 @@ class RibPlot:
         self.x_values = prof2d.x_values
         self.inner = prof2d.curve.scale(self.rib.chord)
         self.inner_normals = self.inner.normvectors()
-        self.outer = self.inner.offset(self.config.allowance_general, simple=False)
+        self.outer = self.inner.offset(self.rib.seam_allowance.si, simple=False)
 
         self._insert_attachment_points(glider)
         holes = self.insert_holes()
@@ -215,7 +215,7 @@ class RibPlot:
 
         #ik = get_x_value(self.x_values, position)
         inner = self.inner.get(ik)
-        outer = inner + self.inner_normals.get(ik) * self.config.allowance_general
+        outer = inner + self.inner_normals.get(ik) * self.rib.seam_allowance.si
         #inner = self.inner[ik]
         # outer = self.outer[ik]
         return inner, outer
@@ -287,7 +287,7 @@ class RibPlot:
         """
         outer_rib = self.outer.fix_errors()
         inner_rib = self.inner
-        t_e_allowance = self.config.allowance_trailing_edge
+
         p1 = inner_rib.nodes[0] + euklid.vector.Vector2D([0, 1])
         p2 = inner_rib.nodes[0] + euklid.vector.Vector2D([0, -1])
         cuts = outer_rib.cut(p1, p2)
@@ -298,12 +298,20 @@ class RibPlot:
         start = cuts[0][0]
         stop = cuts[1][0]
 
-        buerzl = [
-            outer_rib.get(stop),
-            outer_rib.get(stop) + euklid.vector.Vector2D([t_e_allowance, 0]),
-            outer_rib.get(start) + euklid.vector.Vector2D([t_e_allowance, 0]),
-            outer_rib.get(start)
+        if self.rib.trailing_edge_extra is not None:
+            buerzl = [
+                outer_rib.get(stop),
+                outer_rib.get(stop) + euklid.vector.Vector2D([self.rib.trailing_edge_extra.si, 0]),
+                outer_rib.get(start) + euklid.vector.Vector2D([self.rib.trailing_edge_extra.si, 0]),
+                outer_rib.get(start)
+                ]
+        else:
+            buerzl = [
+                outer_rib.get(stop),
+                outer_rib.get(start)
             ]
+        
+        # TODO: add negative
 
         contour = euklid.vector.PolyLine2D(
             outer_rib.get(start, stop).nodes + buerzl
@@ -374,7 +382,7 @@ class SingleSkinRibPlot(RibPlot):
 
 
             p1 = hull.curve.get(ik) * self.rib.chord
-            p2 = p1 + normal * self.config.allowance_general
+            p2 = p1 + normal * self.rib.seam_allowance.si
             return p1, p2
         
     def insert_controlpoints(self, controlpoints: list[float]=None) -> None:
@@ -419,7 +427,7 @@ class SingleSkinRibPlot(RibPlot):
         """
         outer_rib = self.outer
         inner_rib = self.inner
-        t_e_allowance = self.config.allowance_trailing_edge
+
         p1 = inner_rib.get(0) + euklid.vector.Vector2D([0, 1])
         p2 = inner_rib.get(0) + euklid.vector.Vector2D([0, -1])
         cuts = outer_rib.cut(p1, p2)
@@ -433,11 +441,17 @@ class SingleSkinRibPlot(RibPlot):
         singleskin_cut_left = self._get_singleskin_cut(glider)
         single_skin_cut = self.rib.profile_2d(singleskin_cut_left)
 
-        buerzl = euklid.vector.PolyLine2D([
-            inner_rib.get(0),
-            inner_rib.get(0) + euklid.vector.Vector2D([t_e_allowance, 0]),
-            outer_rib.get(start) + euklid.vector.Vector2D([t_e_allowance, 0]),
-            outer_rib.get(start)
+        if self.rib.trailing_edge_extra is not None:
+            buerzl = euklid.vector.PolyLine2D([
+                inner_rib.get(0),
+                inner_rib.get(0) + euklid.vector.Vector2D([self.rib.trailing_edge_extra.si, 0]),
+                outer_rib.get(start) + euklid.vector.Vector2D([self.rib.trailing_edge_extra.si, 0]),
+                outer_rib.get(start)
+                ])
+        else:
+            buerzl = euklid.vector.PolyLine2D([
+                inner_rib.get(0),
+                outer_rib.get(start)
             ])
         contour += outer_rib.get(start, single_skin_cut)
         contour += inner_rib.get(single_skin_cut, len(inner_rib)-1)

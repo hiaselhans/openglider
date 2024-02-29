@@ -54,7 +54,7 @@ class MiniRibPlot:
         x = float(x)
         assert x >= 0
 
-        profile = self.minirib.get_3d(self.cell).flatten()
+        profile = self.minirib.get_profile_3d(self.cell).flatten()
 
         p = profile.profilepoint(x, y)
 
@@ -91,11 +91,11 @@ class MiniRibPlot:
     
     def draw_outline(self) -> euklid.vector.PolyLine2D:
         """
-        Cut trailing edge of outer rib
+        get 2d line
         """
         outer_minirib = self.outer.fix_errors()
         inner_minirib = self.inner
-        t_e_allowance = self.config.allowance_trailing_edge
+        t_e_allowance = self.cell.panels[-1].cut_back.seam_allowance.si
         p1 = inner_minirib.nodes[0] + euklid.vector.Vector2D([0, 1])
         p2 = inner_minirib.nodes[0] + euklid.vector.Vector2D([0, -1])
 
@@ -154,12 +154,19 @@ class MiniRibPlot:
 
         return usage
     
-    
     def flatten(self) -> PlotPart:
         plotpart = PlotPart(material_code=self.minirib.material_code, name=self.minirib.name)
 
-        self.inner = self.minirib.get_flattened(self.cell)
-        self.outer = self.inner.offset(self.config.allowance_general, simple=False)
+        nodes_top, nodes_bottom = self.minirib.get_nodes(self.cell)
+
+        self.cell.get_flattened_cell()
+
+        lengths = self.minirib._get_lengths(self.cell)
+        nodes_top.scale(lengths[0] / nodes_top.get_length())
+        nodes_bottom.scale(lengths[1] / nodes_bottom.get_length())
+        
+        self.inner = nodes_top + nodes_bottom
+        self.outer = self.inner.offset(self.minirib.seam_allowance.si, simple=False)
 
         envelope = self.draw_outline()
 
