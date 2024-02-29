@@ -322,9 +322,9 @@ class AttachmentPointHole(RibHoleBase):
         diagonal_border = rib.convert_to_percentage(self.border_diagonal).si
         side_border_pct = rib.convert_to_percentage(self.border_side)
 
-        upper_1 = envelope.align([self.start, -1])
-        upper_2 = envelope.align([(self.start+self.end)/2, 1])
-        upper_3 = envelope.align([self.end, -1])
+        upper_1 = rib.profile_2d.align([self.start, -1])
+        upper_2 = rib.profile_2d.align([(self.start+self.end)/2, 1])
+        upper_3 = rib.profile_2d.align([self.end, -1])
 
         upper_with_border = euklid.vector.PolyLine2D([upper_1, upper_2, upper_3]).offset(diagonal_border)
         cut_front = lower_envelope.cut(upper_with_border.nodes[0], upper_with_border.nodes[1])[0]
@@ -370,9 +370,9 @@ class AttachmentPointHole(RibHoleBase):
 
         upper_curve = euklid.vector.PolyLine2D(envelope.curve.nodes[:envelope.noseindex][::-1])
 
-        top_center = envelope.align([(self.start+self.end)/2, 1])
-        bottom_start = envelope.align([self.start, -1])
-        bottom_end = envelope.align([self.end, -1])
+        top_center = rib.profile_2d.align([(self.start+self.end)/2, 1])
+        bottom_start = rib.profile_2d.align([self.start, -1])
+        bottom_end = rib.profile_2d.align([self.end, -1])
 
         def get_ik_x(polyline: euklid.vector.PolyLine2D, x: float) -> float:
             return polyline.cut(
