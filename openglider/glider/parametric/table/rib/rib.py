@@ -3,9 +3,15 @@ from typing import Any
 
 from openglider.glider.parametric.table.base import Keyword, RibTable, dto
 from openglider.glider.rib.singleskin import SingleSkinParameters
-from openglider.vector.unit import Angle, Percentage
+from openglider.vector.unit import Angle, Length, Percentage
 
 logger = logging.getLogger(__name__)
+
+class TrailingEdgeCut(dto.DTO):
+    length: Length | Percentage
+
+    def get_object(self) -> Length | Percentage:
+        return self.length * -1
 
 class SkinRib(dto.DTO):
     continued_min_end: Percentage
@@ -45,8 +51,17 @@ class SingleSkinTable(RibTable):
     }
     dtos = {
         "SkinRib": SkinRib,
-        "SkinRib3": SkinRib3
+        "SkinRib3": SkinRib3,
+        "TrailingEdgeCut": TrailingEdgeCut,
     }
+    
+    def get_rib_args(self, rib_no: int, **kwargs: Any) -> dict[str, Any]:
+        result = {}
+        cut: TrailingEdgeCut | None = self.get_one(rib_no, ["TrailingEdgeCut"], **kwargs)
+        if cut is not None:
+            result["trailing_edge_extra"] = cut
+        
+        return result
 
     def get_singleskin_ribs(self, rib_no: int, **kwargs: Any) -> tuple[SingleSkinParameters, Angle] | None:
         return self.get_one(rib_no, ["SkinRib", "SkinRib3"], **kwargs)

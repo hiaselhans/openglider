@@ -417,6 +417,11 @@ class ParametricGlider:
             this_rib_holes = self.tables.holes.get(rib_no, resolvers=resolvers)
             this_rigid_foils = self.tables.rigidfoils_rib.get(rib_no, resolvers=resolvers)
 
+            data = {
+                "trailing_edge_extra": self.allowances.trailing_edge,
+            }
+            data.update(self.tables.rib_modifiers.get_rib_args(rib_no, resolvers=resolvers))
+
             rib = Rib(
                 profile_2d=profile,
                 pos=startpoint,
@@ -433,7 +438,7 @@ class ParametricGlider:
                 sharknose=sharknose,
                 attachment_points=[],
                 seam_allowance=self.allowances.general,
-                trailing_edge_extra=self.allowances.trailing_edge
+                **data  # type: ignore
             )
             rib.set_aoa_relative(aoa_values[rib_no])
 

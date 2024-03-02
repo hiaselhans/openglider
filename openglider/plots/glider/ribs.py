@@ -70,7 +70,12 @@ class RigidFoilPlot:
         distance = self.ribplot.rib.convert_to_chordlength(self.rigidfoil.distance)
         d_outer = self.ribplot.rib.seam_allowance.si + distance.si
 
-        inner_curve = curve.offset(-self.ribplot.rib.seam_allowance.si).fix_errors()
+        if self.rigidfoil.inner_allowance:
+            allowance = self.rigidfoil.inner_allowance
+        else:
+            allowance = self.ribplot.rib.seam_allowance
+        
+        inner_curve = curve.offset(-(distance+allowance).si).fix_errors()
         outer_curve = curve.offset(d_outer).fix_errors()
 
         return inner_curve, outer_curve
@@ -189,16 +194,16 @@ class RibPlot:
         self.insert_controlpoints()
 
         # insert cut
-        envelope = self.draw_outline(glider)
+        envelope = self.get_outline_and_sewing(glider)
 
-        area = envelope.get_area()
+        area = envelope[0].get_area()
         for hole in holes:
             area -= hole.get_area()
 
         self.weight = MaterialUsage().consume(self.rib.material, area)
 
-        self.plotpart.layers[self.layer_name_outline] += [envelope]
-        self.plotpart.layers[self.layer_name_sewing].append(self.inner)
+        self.plotpart.layers[self.layer_name_outline] += [envelope[0]]
+        self.plotpart.layers[self.layer_name_sewing].append(envelope[1])
 
         rigidfoils = self.draw_rigidfoils(glider)
         if add_rigidfoils_to_plot and rigidfoils:
@@ -247,8 +252,13 @@ class RibPlot:
     def insert_controlpoints(self, controlpoints: list[float]=None) -> None:
         if controlpoints is None:
             controlpoints = list(self.config.get_controlpoints(self.rib))
+
+        x_end = None
+        if self.rib.trailing_edge_extra is not None and self.rib.trailing_edge_extra.si < 0:
+            x_end = 1. + self.rib.convert_to_percentage(self.rib.trailing_edge_extra).si
         for x in controlpoints:
-            self.insert_mark(x, self.config.marks_controlpoint)
+            if x_end is None or abs(x) <= x_end:
+                self.insert_mark(x, self.config.marks_controlpoint)
 
     def get_point(self, x: float | Percentage, y: float=-1.) -> euklid.vector.Vector2D:
         x = float(x)
@@ -281,10 +291,25 @@ class RibPlot:
 
         return curves
 
-    def draw_outline(self, glider: Glider) -> euklid.vector.PolyLine2D:
+    def get_outline_and_sewing(self, glider: Glider) -> tuple[euklid.vector.PolyLine2D, euklid.vector.PolyLine2D]:
         """
         Cut trailing edge of outer rib
         """
+        if self.rib.trailing_edge_extra is not None and self.rib.trailing_edge_extra.si < 0.:
+            x = 1. + self.rib.convert_to_percentage(self.rib.trailing_edge_extra).si
+            start = get_x_value(self.x_values, -x)
+            end = get_x_value(self.x_values, x)
+
+            outer = (self.outer.get(start, end) + euklid.vector.PolyLine2D([
+                self.inner.get(end),
+                self.inner.get(start),
+                self.outer.get(start)
+            ])).fix_errors()
+
+            inner = self.inner.get(start, end)
+
+            return outer, inner
+
         outer_rib = self.outer.fix_errors()
         inner_rib = self.inner
 
@@ -317,7 +342,7 @@ class RibPlot:
             outer_rib.get(start, stop).nodes + buerzl
         )
 
-        return contour
+        return contour, self.inner
     
     def walk(self, x: float, amount: float) -> float:
         ik = get_x_value(self.x_values, x)
@@ -421,7 +446,7 @@ class SingleSkinRibPlot(RibPlot):
         self._get_singleskin_cut(glider)
         return super().flatten(glider, add_rigidfoils_to_plot=add_rigidfoils_to_plot)
 
-    def draw_outline(self, glider: Glider) -> euklid.vector.PolyLine2D:
+    def get_outline_and_sewing(self, glider: Glider) -> tuple[euklid.vector.PolyLine2D, euklid.vector.PolyLine2D]:
         """
         Cut trailing edge of outer rib
         """
@@ -458,4 +483,4 @@ class SingleSkinRibPlot(RibPlot):
         contour += buerzl
 
         
-        return contour
+        return contour, self.inner

@@ -72,7 +72,6 @@ class SewingAllowanceConfig(ConfigTable):
     design: Length = Length("10mm")
     trailing_edge: Length = Length("10mm")
 
-
 class ParametricGliderConfig(ConfigTable):
     table_name = "Data"
 
