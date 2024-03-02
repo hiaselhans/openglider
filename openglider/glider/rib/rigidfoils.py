@@ -22,6 +22,7 @@ class RigidFoilBase(ABC, BaseModel):
     start: Percentage = Percentage(-0.1)
     end: Percentage = Percentage(0.1)
     distance: Length | Percentage = Length("3mm")
+    inner_allowance: Length | None = None
 
     cap_length: Length = Length("2cm")
     tension: Percentage = Percentage("98%")

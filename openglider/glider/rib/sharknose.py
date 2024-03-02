@@ -99,7 +99,8 @@ class Sharknose:
                     end=position,
                     distance=rigidfoil.distance,
                     cap_length=rigidfoil.cap_length,
-                    tension=rigidfoil.tension
+                    tension=rigidfoil.tension,
+                    inner_allowance=rigidfoil.inner_allowance
                 )
                 if straight_part := getattr(rigidfoil, "straight_part"):
                     rigid_1.straight_part = straight_part
@@ -115,7 +116,8 @@ class Sharknose:
                     end=rigidfoil.end,
                     distance=rigidfoil.distance,
                     cap_length=rigidfoil.cap_length,
-                    tension=rigidfoil.tension
+                    tension=rigidfoil.tension,
+                    inner_allowance=rigidfoil.inner_allowance
                 )
                 if straight_part := getattr(rigidfoil, "straight_part"):
                     rigid_2.straight_part = straight_part

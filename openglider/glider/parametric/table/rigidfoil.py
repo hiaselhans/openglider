@@ -28,11 +28,15 @@ class RigidFoil5(RigidFoil3):
     circle_radius: Length
     circle_amount: Percentage
 
+class RigidFoil6(RigidFoil5):
+    inner_allowance: Length
+
 class RibRigidTable(RibTable):
     dtos = {
         "RIGIDFOIL": RigidFoilDTO,
         "RIGIDFOIL3": RigidFoil3,
-        "RIGIDFOIL5": RigidFoil5
+        "RIGIDFOIL5": RigidFoil5,
+        "RIGIDFOIL6": RigidFoil6
     }
 
 
