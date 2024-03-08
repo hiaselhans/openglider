@@ -24,6 +24,9 @@ class DesignCut(DTO):
 class FoldedCut(DesignCut):
     _cut_type = PANELCUT_TYPES.folded
 
+class EntryCut(FoldedCut):
+    amount: Length
+
 class Cut3D(DesignCut):
     _cut_type = PANELCUT_TYPES.cut_3d
 

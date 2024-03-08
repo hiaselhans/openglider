@@ -71,6 +71,8 @@ class SewingAllowanceConfig(ConfigTable):
     general: Length = Length("10mm")
     design: Length = Length("10mm")
     trailing_edge: Length = Length("10mm")
+    entry: Length = Length("10mm")
+    folded: Length = Length("10mm")
 
 
 class ParametricGliderConfig(ConfigTable):
