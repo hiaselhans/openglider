@@ -26,6 +26,8 @@ class Sharknose:
     rigidfoil_circle_radius: Length = Length("5cm")
     rigidfoil_circle_amount: Percentage = Percentage(0.4)
 
+    straight_reinforcement_allowance: Length | None = None
+
     def get_modified_airfoil(self, rib: Rib) -> openglider.airfoil.Profile2D:
         data: list[euklid.vector.Vector2D] = []
 

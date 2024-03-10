@@ -31,6 +31,9 @@ class Sharknose8(SharknoseDTO):
     rigidfoil_circle_radius: Length
     rigidfoil_circle_amount: Length
 
+class SharknoseWithWebbing(Sharknose8):
+    straight_reinforcement_allowance: Length
+
 class ProfileModifierTable(RibTable):
     keywords = {
         "ProfileFactor": Keyword(attributes=["thickness_factor"], target_cls=FloatDict),
@@ -41,12 +44,12 @@ class ProfileModifierTable(RibTable):
     dtos = {
         "Sharknose": SharknoseDTO,
         "Sharknose8": Sharknose8,
+        "SharknoseWithWebbing": SharknoseWithWebbing,
     }
 
     def get_sharknose(self, row_no: int, **kwargs: Any) -> Sharknose | None:
-        return self.get_one(row_no, keywords=["Sharknose", "Sharknose8"], **kwargs)
+        return self.get_one(row_no, keywords=["Sharknose", "Sharknose8", "SharknoseWithWebbing"], **kwargs)
 
-    
     def get_flap(self, row_no: int) -> dict[str, float] | None:
         flaps = self.get(row_no, keywords=["Flap"])
         flap = None

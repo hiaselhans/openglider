@@ -7,8 +7,7 @@ from collections.abc import Callable
 import euklid
 from openglider import logging
 from openglider.airfoil import get_x_value
-from openglider.glider.cell.diagonals import (DiagonalRib, DiagonalSide,
-                                              TensionStrap)
+from openglider.glider.cell.diagonals import DiagonalSide
 from openglider.glider.cell.panel import PANELCUT_TYPES
 from openglider.glider.rib.rigidfoils import RigidFoilBase
 from openglider.plots.config import PatternConfig
@@ -16,7 +15,7 @@ from openglider.plots.usage_stats import MaterialUsage
 from openglider.utils.config import Config
 from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
-from openglider.vector.unit import Percentage
+from openglider.vector.unit import Length, Percentage
 
 
 
@@ -149,6 +148,106 @@ class RibPlot:
 
         #self.plotpart = self.x_values = self.inner = self.outer = None
 
+    def get_panel_free_zones(self, glider: Glider) -> list[tuple[Percentage, Percentage]]:
+        panels: list[list[tuple[Percentage, Percentage]]] = []
+        for cell in glider.cells:
+            if len(cell.panels) < 1:
+                continue
+            if cell.rib1 == self.rib:
+                panels.append([
+                    (panel.cut_front.x_left, panel.cut_back.x_left) for panel in cell.panels
+                ])
+            if cell.rib2 == self.rib:
+                panels.append([
+                    (panel.cut_front.x_right, panel.cut_back.x_right) for panel in cell.panels
+                ])
+        
+        result: list[tuple[Percentage, Percentage]] = []
+        last_cut = Percentage(-1)
+        current_indices = [0] * len(panels)
+
+        while True:
+            # go through all panels and check for gaps
+            gap_end = None
+
+            while gap_end is None:
+                for cell_index in range(len(panels)):
+                    while current_indices[cell_index] < len(panels[cell_index]):
+                        panel_index = current_indices[cell_index]
+                        panel = panels[cell_index][panel_index]
+
+                        if panel[0] > last_cut:
+                            # we have a gap => update gap and break the inner loop
+                            if gap_end is None:
+                                gap_end = panel[0]
+                                break
+                            elif gap_end < panel[0]:
+                                gap_end = panel[0]
+                                break
+                        else:
+                            # no gap => reset
+                            gap_end = None
+                            last_cut = max(last_cut, panel[1])
+                        
+                        current_indices[cell_index] += 1
+
+                # break the loop when we are at the end
+                if all([current_indices[i] >= len(panels[i]) for i in range(len(panels))]):
+                    break
+            
+            if gap_end is not None:
+                result.append((last_cut, gap_end))
+                last_cut = gap_end
+
+            # break the loop when we are at the end
+            if all([current_indices[i] >= len(panels[i]) for i in range(len(panels))]):
+                break
+            
+        if last_cut < Percentage(1):
+            result.append((last_cut, Percentage(1)))
+
+        return result
+    
+    def get_panel_cuts(self, glider: Glider) -> list[tuple[Percentage, bool]]:
+        cuts_entry = self._get_panel_cuts(glider, True)
+        cuts_all = self._get_panel_cuts(glider, False)
+
+        cuts_design = set(cuts_all) - set(cuts_entry)
+        
+        all_cuts_with_type = [(x, True) for x in cuts_entry] + [(x, False) for x in cuts_design]
+        all_cuts_with_type.sort(key=lambda x: x[0])
+
+        return all_cuts_with_type
+
+
+
+    def _get_panel_cuts(self, glider: Glider, connected: bool) -> list[Percentage]:
+        panel_cuts: set[Percentage] = set()
+
+        for cell in glider.cells:
+            if self.rib not in cell.ribs:
+                continue
+
+            if not connected:
+                panels = cell.panels
+            else:
+                panels = cell.get_connected_panels()
+
+            if cell.rib1 == self.rib:
+                # panel-cuts
+                for panel in panels:
+                    panel_cuts.add(panel.cut_front.x_left)
+                    panel_cuts.add(panel.cut_back.x_left)
+            
+            elif cell.rib2 == self.rib:
+                for panel in panels:
+                    panel_cuts.add(panel.cut_front.x_right)
+                    panel_cuts.add(panel.cut_back.x_right)
+            
+        return list(panel_cuts)
+
+
+
     def flatten(self, glider: Glider, add_rigidfoils_to_plot: bool=True) -> PlotPart:
         self.plotpart = PlotPart(name=self.rib.name, material_code=str(self.rib.material))
         prof2d = self.rib.get_hull()
@@ -161,49 +260,36 @@ class RibPlot:
         self._insert_attachment_points(glider)
         holes = self.insert_holes()
 
-        panel_cuts: set[Percentage] = set()
         for cell in glider.cells:
-            if self.config.insert_design_cuts:
-                panels = cell.panels
-            else:
-                panels = cell.get_connected_panels()
-            if cell.rib1 == self.rib:
-                # panel-cuts
-                for panel in panels:
-                    panel_cuts.add(panel.cut_front.x_left)
-                    panel_cuts.add(panel.cut_back.x_left)
+            if self.rib not in cell.ribs:
+                continue
 
-                # diagonals
-                all_diagonals: list[DiagonalRib | TensionStrap] = cell.diagonals + cell.straps  # type: ignore
-                for diagonal in all_diagonals:
+            if cell.rib1 == self.rib:
+                for diagonal in cell.diagonals + cell.straps:
                     self.insert_drib_mark(diagonal.left)
 
             elif cell.rib2 == self.rib:
-                for panel in panels:
-                    panel_cuts.add(panel.cut_front.x_right)
-                    panel_cuts.add(panel.cut_back.x_right)
-
                 for diagonal in cell.diagonals + cell.straps:  # type: ignore
                     self.insert_drib_mark(diagonal.right)
 
-        for cut in panel_cuts:
+        for cut, is_entry in self.get_panel_cuts(glider):
             if -0.99 < cut.si and cut.si < 0.99:
-                self.insert_mark(cut, self.config.marks_panel_cut)
+                if is_entry:
+                    self.insert_mark(cut, self.config.marks_panel_cut, force_layer_name=self.layer_name_outline)
+                elif self.config.insert_design_cuts:
+                    self.insert_mark(cut, self.config.marks_panel_cut)
 
         self._insert_text(self.rib.name)
         self.insert_controlpoints()
 
         # insert cut
-        envelope = self.get_outline_and_sewing(glider)
+        envelope = self.draw_outline(glider)
 
-        area = envelope[0].get_area()
+        area = envelope.get_area()
         for hole in holes:
             area -= hole.get_area()
 
         self.weight = MaterialUsage().consume(self.rib.material, area)
-
-        self.plotpart.layers[self.layer_name_outline] += [envelope[0]]
-        self.plotpart.layers[self.layer_name_sewing].append(envelope[1])
 
         rigidfoils = self.draw_rigidfoils(glider)
         if add_rigidfoils_to_plot and rigidfoils:
@@ -218,18 +304,17 @@ class RibPlot:
     def _get_inner_outer(self, x_value: Percentage | float) -> tuple[euklid.vector.Vector2D, euklid.vector.Vector2D]:
         ik = get_x_value(self.x_values, x_value)
 
-        #ik = get_x_value(self.x_values, position)
         inner = self.inner.get(ik)
         outer = inner + self.inner_normals.get(ik) * self.rib.seam_allowance.si
-        #inner = self.inner[ik]
-        # outer = self.outer[ik]
+
         return inner, outer
 
     def insert_mark(
         self,
         position: float | Percentage,
         mark_function: Callable[[euklid.vector.Vector2D, euklid.vector.Vector2D], dict[str, list[euklid.vector.PolyLine2D]]],
-        insert: bool=True
+        insert: bool=True,
+        force_layer_name: str | None = None
         ) -> list[list[euklid.vector.PolyLine2D]]:
 
         marks = []
@@ -243,6 +328,8 @@ class RibPlot:
 
         for mark_layer, mark in mark_function(inner, outer).items():
             if insert:
+                if force_layer_name:
+                    mark_layer = force_layer_name
                 self.plotpart.layers[mark_layer] += mark
 
             marks.append(mark)
@@ -291,66 +378,114 @@ class RibPlot:
 
         return curves
 
-    def get_outline_and_sewing(self, glider: Glider) -> tuple[euklid.vector.PolyLine2D, euklid.vector.PolyLine2D]:
+    def draw_outline(self, glider: Glider) -> euklid.vector.PolyLine2D:
         """
         Cut trailing edge of outer rib
         """
         if self.rib.trailing_edge_extra is not None and self.rib.trailing_edge_extra.si < 0.:
             x = 1. + self.rib.convert_to_percentage(self.rib.trailing_edge_extra).si
             start = get_x_value(self.x_values, -x)
-            end = get_x_value(self.x_values, x)
+            inner_start = start
 
-            outer = (self.outer.get(start, end) + euklid.vector.PolyLine2D([
+            end = get_x_value(self.x_values, x)
+            inner_end = end
+
+            trailing_edge = [
                 self.inner.get(end),
                 self.inner.get(start),
                 self.outer.get(start)
-            ])).fix_errors()
-
-            inner = self.inner.get(start, end)
-
-            return outer, inner
-
-        outer_rib = self.outer.fix_errors()
-        inner_rib = self.inner
-
-        p1 = inner_rib.nodes[0] + euklid.vector.Vector2D([0, 1])
-        p2 = inner_rib.nodes[0] + euklid.vector.Vector2D([0, -1])
-        cuts = outer_rib.cut(p1, p2)
-
-        if len(cuts) != 2:
-            raise Exception("could not cut airfoil TE")
-
-        start = cuts[0][0]
-        stop = cuts[1][0]
-
-        if self.rib.trailing_edge_extra is not None:
-            buerzl = [
-                outer_rib.get(stop),
-                outer_rib.get(stop) + euklid.vector.Vector2D([self.rib.trailing_edge_extra.si, 0]),
-                outer_rib.get(start) + euklid.vector.Vector2D([self.rib.trailing_edge_extra.si, 0]),
-                outer_rib.get(start)
-                ]
+            ]        
         else:
-            buerzl = [
-                outer_rib.get(stop),
-                outer_rib.get(start)
-            ]
+            inner_start = 0
+            inner_end = len(self.inner)-1
+
+            p1 = self.inner.nodes[0] + euklid.vector.Vector2D([0, 1])
+            p2 = self.inner.nodes[0] + euklid.vector.Vector2D([0, -1])
+            cuts = self.outer.cut(p1, p2)
+
+            if len(cuts) != 2:
+                raise Exception("could not cut airfoil TE")
+
+            start = cuts[0][0]
+            stop = cuts[1][0]
+
+            if self.rib.trailing_edge_extra is not None:
+                trailing_edge = [
+                    self.outer.get(stop) + euklid.vector.Vector2D([self.rib.trailing_edge_extra.si, 0]),
+                    self.outer.get(start) + euklid.vector.Vector2D([self.rib.trailing_edge_extra.si, 0]),
+                    self.outer.get(start)
+                    ]
+            else:
+                trailing_edge = [
+                    self.outer.get(start)
+                ]
+
+        outline = None
+        panel_free_zones = self.get_panel_free_zones(glider)
+
+        seams: list[tuple[float, float]] = []
+        seam_last_x = inner_start
+        for x1, x2 in panel_free_zones:
+            ik1 = get_x_value(self.x_values, x1)
+            ik2 = get_x_value(self.x_values, x2)
+
+            seams.append((seam_last_x, ik1))
+            seam_last_x = ik2
         
-        # TODO: add negative
+        seams.append((seam_last_x, inner_end))
 
-        contour = euklid.vector.PolyLine2D(
-            outer_rib.get(start, stop).nodes + buerzl
-        )
+        inner = []
 
-        return contour, self.inner
-    
+        for panel_start, panel_end in seams:
+            inner.append(self.inner.get(panel_start, panel_end))
+
+        if self.rib.sharknose and self.rib.sharknose.straight_reinforcement_allowance is not None:
+            for x1, x2 in panel_free_zones[:]:
+                if x1 < self.rib.sharknose.start and x2 > self.rib.sharknose.end:
+                    continue
+                x1 = max(self.rib.sharknose.start, x1)
+                x2 = min(self.rib.sharknose.end, x2)
+                
+                sharknose_start = get_x_value(self.x_values, x1)
+                sharknose_end = get_x_value(self.x_values, x2)
+
+                line1 = self.outer.get(start, sharknose_start).nodes
+                line2 = self.outer.get(sharknose_end, stop).nodes
+
+                allowance_diff = self.rib.sharknose.straight_reinforcement_allowance - self.rib.seam_allowance
+                outline_lst = line1[:]
+
+                if allowance_diff > Length("0.1mm"): # TODO: what is a reasonable diff?
+                    p1 = line1[-1]
+                    p2 = line2[0]
+                    
+                    diff = p2 - p1
+                    normal = euklid.vector.Vector2D([diff[1], -diff[0]]).normalized()
+
+                    outline_lst.append(p1 + normal * allowance_diff)
+                    outline_lst.append(p2 + normal * allowance_diff)
+
+                outline_lst += line2
+                outline_lst += trailing_edge
+
+                outline = euklid.vector.PolyLine2D(outline_lst)
+        
+        if outline is None:
+            outline = euklid.vector.PolyLine2D(
+                self.outer.get(start, stop).nodes + trailing_edge
+            ).fix_errors()
+
+        self.plotpart.layers[self.layer_name_outline].append(outline)
+        self.plotpart.layers[self.layer_name_sewing] += inner
+
+        return outline
+
     def walk(self, x: float, amount: float) -> float:
         ik = get_x_value(self.x_values, x)
 
         ik_new = self.inner.walk(ik, amount)
 
         return self.inner.get(ik_new)[0]/self.rib.chord
-        
 
     def _insert_attachment_points(self, glider: Glider) -> None:
         for attachment_point in self.rib.attachment_points:
@@ -446,7 +581,7 @@ class SingleSkinRibPlot(RibPlot):
         self._get_singleskin_cut(glider)
         return super().flatten(glider, add_rigidfoils_to_plot=add_rigidfoils_to_plot)
 
-    def get_outline_and_sewing(self, glider: Glider) -> tuple[euklid.vector.PolyLine2D, euklid.vector.PolyLine2D]:
+    def draw_outline(self, glider: Glider) -> euklid.vector.PolyLine2D:
         """
         Cut trailing edge of outer rib
         """
@@ -482,5 +617,7 @@ class SingleSkinRibPlot(RibPlot):
         contour += inner_rib.get(single_skin_cut, len(inner_rib)-1)
         contour += buerzl
 
-        
-        return contour, self.inner
+        self.plotpart.layers[self.layer_name_outline].append(contour)
+        self.plotpart.layers[self.layer_name_sewing].append(self.inner)
+
+        return contour
