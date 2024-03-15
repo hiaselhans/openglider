@@ -25,6 +25,7 @@ class Quantity(pydantic.BaseModel):
 
     re_number: ClassVar[str] = r"[+-]?(?:(?:\d+\.?\d*)|(?:\.\d+))(?:[eE][+-]?\d+)?|\d+"
     re_unit: ClassVar[str] = r"[\w°%]+)(?!\S"
+    re_number_only: ClassVar[re.Pattern] = re.compile(f"^\s*({re_number})\s*$")
     re_combined: ClassVar[re.Pattern] = re.compile(f"({re_number})\s*({re_unit})")
 
     def __init__(self, value: float | str, unit: str | None=None, display_unit: str | None=None):
@@ -35,10 +36,13 @@ class Quantity(pydantic.BaseModel):
     def _get_init_args(cls, value: float | str, unit: str | None=None, display_unit: str | None=None) -> dict[str, Any]:
         value_float = None
         if isinstance(value, str):
-            assert unit is None
-            if match := cls.re_combined.match(value):
-                value_str, unit = match.groups()
-                value_float = float(value_str)
+            if cls.re_number_only.match(value):
+                value_float = float(value)
+            else:
+                assert unit is None
+                if match := cls.re_combined.match(value):
+                    value_str, unit = match.groups()
+                    value_float = float(value_str)
         
         if value_float is None:
             value_float = float(value)
