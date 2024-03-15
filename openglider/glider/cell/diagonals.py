@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import copy
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
 import euklid
-from openglider.vector.drawing import PlotPart
 import openglider.mesh as mesh
 import openglider.mesh.triangulate
 from openglider.utils.dataclass import BaseModel
@@ -94,6 +94,8 @@ class DiagonalRib(BaseModel):
     hole_border_side :float=0.2
     hole_border_front_back: float=0.15
 
+    curve_factor: Percentage | None = None
+
     def copy(self, **kwargs: Any) -> DiagonalRib:
         return copy.copy(self)
 
@@ -122,6 +124,57 @@ class DiagonalRib(BaseModel):
         right = self.right.get_curve(cell.rib2)
 
         return left, right
+    
+    def get_side_controlpoints(
+            self,
+            left_2d: euklid.vector.PolyLine2D,
+            right_2d: euklid.vector.PolyLine2D
+            ) -> tuple[euklid.vector.Vector2D, euklid.vector.Vector2D] | None:
+        
+        if self.curve_factor is not None:
+            left_length = left_2d.get_length()
+            right_length = right_2d.get_length()
+
+            if left_length > right_length:
+                walk_length = left_length/2*self.curve_factor.si
+                ik1 = left_2d.walk(0, walk_length)
+                ik2 = left_2d.walk(len(left_2d.nodes)-1, -walk_length)
+                
+                return left_2d.get(ik1), left_2d.get(ik2)
+            else:
+                walk_length = right_length/2*self.curve_factor.si
+                ik1 = right_2d.walk(0, walk_length)
+                ik2 = right_2d.walk(len(right_2d.nodes)-1, -walk_length)
+                
+                return right_2d.get(ik1), right_2d.get(ik2)
+        
+        return None
+    
+    def get_side_curves(self, left_2d: euklid.vector.PolyLine2D, right_2d: euklid.vector.PolyLine2D, insert_points: int) -> tuple[list[euklid.vector.Vector2D], list[euklid.vector.Vector2D]]:
+        controlpoints = self.get_side_controlpoints(left_2d, right_2d)
+
+        if controlpoints is not None:
+            curve_1 = euklid.spline.BSplineCurve([
+                left_2d.nodes[0],
+                controlpoints[0],
+                right_2d.nodes[0]
+            ]).get_sequence(100).resample(insert_points+2).nodes[1:-1]
+            curve_2 = euklid.spline.BSplineCurve([
+                left_2d.nodes[-1],
+                controlpoints[1],
+                right_2d.nodes[-1]
+            ]).get_sequence(100).resample(insert_points+2).nodes[1:-1]
+        else:
+            def get_list_2d(p1: euklid.vector.Vector2D, p2: euklid.vector.Vector2D) -> list[euklid.vector.Vector2D]:
+                return [
+                    p1 + (p2-p1) * ((i+1)/(insert_points+1))
+                    for i in range(insert_points)
+                ]
+
+            curve_1 = get_list_2d(left_2d.nodes[0], right_2d.nodes[0])
+            curve_2 = get_list_2d(left_2d.nodes[-1], right_2d.nodes[-1])
+        
+        return curve_1, curve_2
 
     def get_mesh(self, cell: Cell, insert_points: int=10, project_3d: bool=False, hole_res: int = 40) -> mesh.Mesh:
         """
@@ -129,31 +182,40 @@ class DiagonalRib(BaseModel):
         """
         left, right = self.get_3d(cell)
         left_2d, right_2d = self.get_flattened(cell)
-        
-        envelope_2d = left_2d.nodes
-        envelope_3d = left.nodes
 
+        node_no = max(len(left_2d.nodes), len(right_2d.nodes))
 
-        def get_list_3d(p1: euklid.vector.Vector3D, p2: euklid.vector.Vector3D) -> list[euklid.vector.Vector3D]:
-            return [
-                p1 + (p2-p1) * ((i+1)/(insert_points+1))
-                for i in range(insert_points)
-            ]
-        def get_list_2d(p1: euklid.vector.Vector2D, p2: euklid.vector.Vector2D) -> list[euklid.vector.Vector2D]:
-            return [
-                p1 + (p2-p1) * ((i+1)/(insert_points+1))
-                for i in range(insert_points)
-            ]
+        mapping_2d = Mapping([right_2d.resample(node_no), left_2d.resample(node_no)])
+        mapping_3d = Mapping3D([right.resample(node_no), left.resample(node_no)])
 
-        envelope_2d += get_list_2d(left_2d.nodes[-1], right_2d.nodes[-1])
-        envelope_3d += get_list_3d(left.nodes[-1], right.nodes[-1])
+        def map_to_3d(point: euklid.vector.Vector2D) -> euklid.vector.Vector3D:
+            ik = mapping_2d.get_iks(point)
+            return mapping_3d.get_point(*ik)
 
+        envelope_2d = left_2d.nodes[:]
+        envelope_3d = left.nodes[:]
+
+        curve_1, curve_2 = self.get_side_curves(left_2d, right_2d, insert_points)
+
+        envelope_2d += curve_2
         envelope_2d += right_2d.reverse().nodes
-        envelope_3d += right.reverse().nodes
+        envelope_2d += curve_1[::-1]
 
-        envelope_2d += get_list_2d(right_2d.nodes[0], left_2d.nodes[0])
-        envelope_3d += get_list_3d(right.nodes[0], left.nodes[0])
-        
+        if self.curve_factor is not None:
+            envelope_3d += [map_to_3d(p) for p in curve_2]
+            envelope_3d += right.reverse().nodes
+            envelope_3d += [map_to_3d(p) for p in curve_1[::-1]]
+        else:
+            def get_list_3d(p1: euklid.vector.Vector3D, p2: euklid.vector.Vector3D) -> list[euklid.vector.Vector3D]:
+                return [
+                    p1 + (p2-p1) * ((i+1)/(insert_points+1))
+                    for i in range(insert_points)
+                ]
+
+            envelope_3d += get_list_3d(left.nodes[-1], right.nodes[-1])
+            envelope_3d += right.reverse().nodes
+            envelope_3d += get_list_3d(right.nodes[0], left.nodes[0])
+
         boundary_nodes = list(range(len(envelope_2d)))
         boundary = [boundary_nodes+[0]]
         
@@ -174,12 +236,6 @@ class DiagonalRib(BaseModel):
 
         # map 2d-points to 3d-points
 
-        # todo: node_no = kgv(len(left), len(right))
-        node_no = 100
-
-        mapping_2d = Mapping([right_2d.resample(node_no), left_2d.resample(node_no)])
-        mapping_3d = Mapping3D([right.resample(node_no), left.resample(node_no)])
-
         points_3d: list[euklid.vector.Vector3D] = []
 
         for point_3d, point_2d in zip(envelope_3d, tri_mesh.points[:len(envelope_2d)]):
@@ -197,7 +253,6 @@ class DiagonalRib(BaseModel):
             raise Exception(f"min polygon size: {min_size} in drib: {self.name}")
 
         return drib_mesh
-
 
     def get_holes(self, cell: Cell, points: int=40) -> tuple[list[euklid.vector.PolyLine2D], list[euklid.vector.Vector2D]]:
         left, right = self.get_flattened(cell)
@@ -272,6 +327,29 @@ class TensionStrap(DiagonalRib):
         right_side = DiagonalSide(center=right, width=width, height=height)
 
         super().__init__(left=left_side, right=right_side, **kwargs)
+
+    def get_side_controlpoints(
+            self,
+            left_2d: euklid.vector.PolyLine2D,
+            right_2d: euklid.vector.PolyLine2D
+            ) -> tuple[euklid.vector.Vector2D, euklid.vector.Vector2D] | None:
+        
+        if self.curve_factor is not None:
+            rotation = euklid.vector.Rotation2D(math.pi/2)
+            left_1 = left_2d.nodes[0]
+            left_2 = left_2d.nodes[-1]
+            right_1 = right_2d.nodes[0]
+            right_2 = right_2d.nodes[-1]
+            normal_size = min(left_2d.get_length(), right_2d.get_length())
+            normal_1 = rotation.apply(right_1-left_1).normalized() * normal_size
+            normal_2 = rotation.apply(right_2-left_2).normalized() * normal_size
+
+            return (
+                left_1 + (right_1 - left_1) * 0.5 + normal_1 * self.curve_factor,
+                left_2 + (right_2 - left_2) * 0.5 - normal_2 * self.curve_factor,
+            )
+        
+        return None
     
     def __json__(self) -> dict[str, Any]:
         return {

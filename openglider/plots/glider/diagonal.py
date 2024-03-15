@@ -26,6 +26,13 @@ class DribPlot:
         self.config = self.DefaultConf(config)
 
         left, right = self.drib.get_flattened(self.cell)
+        front = back = None
+
+        if self.drib.curve_factor is not None:
+            if self.drib.num_folds > 0:
+                raise ValueError()
+            front, back = self.drib.get_side_curves(left, right, 100)
+
         p1, p2 = left.nodes[0], right.nodes[0]
         left = left.mirror(p1, p2)
         right = right.mirror(p1, p2)
@@ -38,13 +45,20 @@ class DribPlot:
         angle = (center_right - center_left).angle()
 
         self.angle = angle
-
-        self.left = left.rotate(-angle, euklid.vector.Vector2D([0,0]))
-        self.right = right.rotate(-angle, euklid.vector.Vector2D([0,0]))
+        rotation_center = euklid.vector.Vector2D([0,0])
+        self.left = left.rotate(-angle, rotation_center)
+        self.right = right.rotate(-angle, rotation_center)
 
         # left and right are going top to bottom -> offset reversed
         self.left_out = self.left.offset(self.cell.rib1.seam_allowance.si)
         self.right_out = self.right.offset(-self.cell.rib2.seam_allowance.si)
+
+        self.front = self.back = None
+        if front is not None:
+            self.front = euklid.vector.PolyLine2D(front).mirror(p1, p2).rotate(-self.angle, rotation_center)
+        if back is not None:
+            self.back = euklid.vector.PolyLine2D(back).mirror(p1, p2).rotate(-self.angle, rotation_center)
+
 
     def get_left(self, x: float) -> tuple[euklid.vector.Vector2D, euklid.vector.Vector2D]:
         return self.get_p1_p2(x, right_side=False)
@@ -135,26 +149,30 @@ class DribPlot:
                     continue
 
     def _insert_attachment_points(self, plotpart: PlotPart) -> None:
-        def _add_mark(name: str, p1: euklid.vector.Vector2D, p2: euklid.vector.Vector2D) -> None:
+        def _add_mark(name: str, p1: euklid.vector.Vector2D, p2: euklid.vector.Vector2D, mirror: bool) -> None:
             for layer_name, marks in self.config.marks_attachment_point(p1, p2).items():
                 plotpart.layers[layer_name] += marks
-            plotpart.layers["marks"] += Text(name, p1 + (p1 - p2), p1).get_vectors()
+            left = p1 + (p1-p2)
+            right = p1
+            if mirror:
+                right, left = left, right
+            plotpart.layers["marks"] += Text(name, left, right).get_vectors()
 
         for attachment_point in self.cell.rib1.attachment_points:
             try:
                 p1, p2 = self.get_left(attachment_point.rib_pos.si)
             except ValueError:
                 continue
-            _add_mark(attachment_point.name, p1, p2)
+            _add_mark(attachment_point.name, p1, p2, True)
 
         for attachment_point in self.cell.rib2.attachment_points:
             try:
                 p1, p2 = self.get_right(attachment_point.rib_pos.si)
             except ValueError:
                 continue
-            _add_mark(attachment_point.name, p1, p2)
+            _add_mark(attachment_point.name, p1, p2, False)
 
-    def _insert_text(self, plotpart: PlotPart, reverse: bool=False) -> None:
+    def _insert_text(self, plotpart: PlotPart, front: euklid.vector.PolyLine2D | None, reverse: bool=False) -> None:
         if reverse:
             node_index = -1
         else:
@@ -162,10 +180,21 @@ class DribPlot:
         # text_p1 = left_out[0] + self.config.drib_text_position * (right_out[0] - left_out[0])
         val_valign = 0.6
         if self.drib.num_folds == 0:
-            val_valign *= -1
+            val_valign = -1
+
+        if front is not None:
+            front_curve = euklid.vector.PolyLine2D([self.left.nodes[0]] + front.nodes + [self.right.nodes[0]])
+            ik0 = front_curve.walk(0, 0.01)
+            ik1 = front_curve.walk(ik0, self.cell.rib1.seam_allowance.si * 0.6 * len(self.drib.name))
+            p0 = front_curve.get(ik0)
+            p1 = front_curve.get(ik1)
+        else:
+            p0 = self.left.nodes[node_index]
+            p1 = self.right.nodes[node_index]
+
         plotpart.layers["text"] += Text(f" {self.drib.name} ",
-                                        self.left.nodes[node_index],
-                                        self.right.nodes[node_index],
+                                        p0,
+                                        p1,
                                         size=self.drib.fold_allowance * 0.6,
                                         height=0.6,
                                         valign=val_valign).get_vectors()
@@ -190,24 +219,34 @@ class DribPlot:
                                         cut_front_result.outline.reverse()
             ]
 
+            plotpart.layers["marks"].append(euklid.vector.PolyLine2D([self.left.get(0), self.right.get(0)]))
+            plotpart.layers["marks"].append(euklid.vector.PolyLine2D([self.left.get(len(self.left) - 1), self.right.get(len(self.right) - 1)]))
+
         else:
-            outer = self.left_out.copy()
-            outer += euklid.vector.PolyLine2D([self.left.nodes[-1]])
-            outer += euklid.vector.PolyLine2D([self.right.nodes[-1]])
-            outer += self.right_out.reverse()
-            outer += euklid.vector.PolyLine2D([self.right.nodes[0]])
-            outer += euklid.vector.PolyLine2D([self.left.nodes[0]])
-            outer += euklid.vector.PolyLine2D([self.left_out.nodes[0]])
+            outer: list[euklid.vector.Vector2D] = self.left_out.copy().nodes
+            outer.append(self.left.nodes[-1])
+
+            if self.back:
+                outer += self.back.nodes
+
+            outer.append(self.right.nodes[-1])
+            outer += self.right_out.reverse().nodes
+            outer.append(self.right.nodes[0])
+
+            if self.front:
+                outer += self.front.nodes[::-1]
+            
+            outer += [
+                self.left.nodes[0],
+                self.left_out.nodes[0]
+            ]
             #outer += euklid.vector.PolyLine2D([self.left_out.get(p1)])
-            plotpart.layers["cuts"].append(outer)
+            plotpart.layers["cuts"].append(euklid.vector.PolyLine2D(outer))
 
         for curve in self.drib.get_holes(self.cell)[0]:
             curve = curve.mirror(self.p1, self.p2)
-            curve = curve.rotate(-self.angle, euklid.vector.Vector2D([0,0]))
+            #curve = curve.rotate(-self.angle, euklid.vector.Vector2D([0,0]))
             plotpart.layers["cuts"].append(curve)
-
-        plotpart.layers["marks"].append(euklid.vector.PolyLine2D([self.left.get(0), self.right.get(0)]))
-        plotpart.layers["marks"].append(euklid.vector.PolyLine2D([self.left.get(len(self.left) - 1), self.right.get(len(self.right) - 1)]))
 
         plotpart.layers["stitches"] += [self.left, self.right]
 
@@ -219,7 +258,7 @@ class DribPlot:
         #p1 = euklid.vector.Vector2D([0, 0])
         #p2 = euklid.vector.Vector2D([1, 0])
         #plotpart = plotpart.mirror(p1, p2)
-        self._insert_text(plotpart)
+        self._insert_text(plotpart, self.front)
         
         self.plotpart = plotpart
         return plotpart

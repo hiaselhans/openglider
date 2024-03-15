@@ -1,3 +1,4 @@
+from typing import Any
 from openglider.glider.cell.diagonals import DiagonalRib, DiagonalSide, TensionLine, TensionStrap
 from openglider.glider.parametric.table.base import CellTable
 from openglider.glider.parametric.table.base.dto import DTO, CellTuple
@@ -44,6 +45,58 @@ class DiagonalWithHolesDTO(DiagonalDTO):
 
         return diagonal
 
+class FingerDiagonal(DTO):
+    lower_position: Percentage
+    lower_width: Percentage | Length
+
+    upper_start: Percentage
+    upper_end: Percentage
+
+    fingers: int
+    direction_up: bool
+    material_code: str
+    curve_factor: Percentage
+
+    def get_object(self) -> list[DiagonalRib]:
+        assert self.fingers > 0
+
+        lower_side = DiagonalSide(center=self.lower_position, width=self.lower_width, height=-1)
+        upper_width = (self.upper_end - self.upper_start) / self.fingers
+
+        upper_sides = [
+            DiagonalSide(
+                center=self.upper_start + (i+0.5) * upper_width,
+                width=upper_width,    
+                height=1.
+                )
+            for i in range(self.fingers)
+        ]
+        ribs = []
+
+        for upper in upper_sides:
+            if self.direction_up:
+                ribs.append(
+                    DiagonalRib(
+                        left=lower_side,
+                        right=upper,
+                        material_code=self.material_code,
+                        num_folds=0,
+                        curve_factor=self.curve_factor
+                    )
+                )
+            else:
+                ribs.append(
+                    DiagonalRib(
+                        left=upper,
+                        right=lower_side,
+                        material_code=self.material_code,
+                        num_folds=0,
+                        curve_factor=self.curve_factor
+                    )
+                )
+        
+        return ribs
+
 class StrapDTO(DTO):
     position: CellTuple[Percentage]
     width: Percentage | Length
@@ -59,7 +112,17 @@ class Strap3DTO(StrapDTO):
         result.num_folds = self.num_folds
 
         return result
-    
+
+class CurvedStrap(StrapDTO):
+    curve_factor: Percentage
+
+    def get_object(self) -> TensionStrap:
+        result = super().get_object()
+        result.curve_factor = self.curve_factor
+        result.num_folds = 0
+        return result
+
+
 class TensionLineDTO(DTO):
     position: CellTuple[Percentage]
 
@@ -70,13 +133,26 @@ class DiagonalTable(CellTable):
     dtos = {
         "QR": QRDTO,
         "DIAGONAL": DiagonalDTO,
-        "DiagonalWithHoles": DiagonalWithHolesDTO
-
+        "DiagonalWithHoles": DiagonalWithHolesDTO,
+        "FingerDiagonal": FingerDiagonal
     }
+
+    def get(self, row_no: int, keywords: list[str] | None = None, **kwargs: Any) -> list:
+        result = super().get(row_no, keywords, **kwargs)
+        new_result = []
+
+        for x in result:
+            if isinstance(x, list):
+                new_result += x
+            else:
+                new_result.append(x)
+
+        return new_result
 
 class StrapTable(CellTable):
     dtos = {
         "STRAP": StrapDTO,
         "STRAP3": Strap3DTO,
-        "VEKTLAENGE": TensionLineDTO
+        "VEKTLAENGE": TensionLineDTO,
+        "CurvedStrap": CurvedStrap
     }
