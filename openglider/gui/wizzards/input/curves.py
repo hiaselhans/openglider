@@ -58,7 +58,7 @@ class CurveInput(Canvas):
         if self.layout_graphics is not None:
             self.removeItem(self.layout_graphics)
 
-        self.shape_plot.redraw(self.shape_settings.config)
+        self.shape_plot.redraw(self.shape_settings.config.copy())
 
         self.layout_graphics = LayoutGraphics(self.shape_plot.drawing, fill=False)
         self.addItem(self.layout_graphics)
