@@ -66,7 +66,7 @@ class LineSetTable(BaseModel):
                     line_type_name = str(self.table[row, column + 1])
 
                     if match := isinstance(value, str) and re.match(r"(.*)([+-].*)", value):
-                        name_or_length = match.group(0)
+                        name_or_length = match.group(1)
                         trim_correction = Length(match.group(2))
                     else:
                         name_or_length = value
