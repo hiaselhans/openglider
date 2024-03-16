@@ -61,6 +61,11 @@ class AutoComplete(QtWidgets.QWidget):
         self.selector.activated.connect(self._update)
         #self.selector.changed.connect(self._update)
     
+    def update_choices(self, choices: list[str]) -> None:
+        self.selector.clear()
+        self.choices = choices
+        self.selector.addItems(choices)
+    
     @property
     def selected(self) -> str:
         return self.choices[self.selector.currentIndex()]

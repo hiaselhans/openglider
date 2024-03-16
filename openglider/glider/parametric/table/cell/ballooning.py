@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 class BallooningRampDTO(DTO):
+    """
+    Ballooning Ramp surrounding all non-panel areas
+    """
     ramp_distance: Percentage
 
     def get_object(self) -> EntryRamp:
