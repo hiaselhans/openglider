@@ -4,7 +4,7 @@ def A8001(strength: int, diameter: float, weight: float) -> None:
     LineType(
         f"edelrid.A-8001-{strength:03d}",
         diameter,
-        [[10*strength, 0.05]],
+        [[10*strength, 5.]],
         10*strength,
         weight,
         sheated=False,

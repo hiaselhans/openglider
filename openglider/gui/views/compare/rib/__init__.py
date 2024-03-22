@@ -20,7 +20,7 @@ class RibCache(GliderCache[GliderRibPlots]):
 
 
 class RibView(QtWidgets.QWidget, CompareView):
-    grid = False
+    grid = True
 
     def __init__(self, app: GliderApp):
         super().__init__()

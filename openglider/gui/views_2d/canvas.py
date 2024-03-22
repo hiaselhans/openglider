@@ -24,9 +24,10 @@ class Canvas(pyqtgraph.ViewBox):
         self.setAcceptDrops(True)
 
     def update_data(self) -> None:
-        if self.grid and self._grid is None:
-            self._grid = pyqtgraph.GridItem()
-            self.addItem(self._grid)
+        if self.grid:
+            if self._grid is None or self._grid not in self.addedItems:
+                self._grid = pyqtgraph.GridItem()
+                self.addItem(self._grid)
         elif self._grid and not self.grid:
             self.removeItem(self._grid)
             self._grid = None

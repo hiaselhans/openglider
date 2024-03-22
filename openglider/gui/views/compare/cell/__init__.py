@@ -56,4 +56,5 @@ class CellView(QtWidgets.QWidget, CompareView):
             dwg = plots.get(config.cell_no, config.layers)
             self.plot.addItem(dwg)
         
+        #self.plot.update_data()
         self.plot.update()

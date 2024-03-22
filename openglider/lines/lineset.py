@@ -674,7 +674,7 @@ class LineSet:
         
         return self
     
-    def get_line_length(self, line: Line, with_sag: bool=True) -> LineLength:
+    def get_line_length(self, line: Line, with_sag: bool=True, pre_load: float = 50) -> LineLength:
         loop_correction = 0.
         # reduce by canopy-loop length / brake offset
         if len(self.get_upper_connected_lines(line.upper_node)) == 0:
@@ -697,20 +697,20 @@ class LineSet:
 
 
         return LineLength(
-            line.get_stretched_length(sag=with_sag),
+            line.get_stretched_length(sag=with_sag, pre_load=pre_load),
             line.line_type.seam_correction,
             loop_correction,
             knot_correction,
             line.trim_correction.si
         )
     
-    def get_checklength(self, node: Node, with_sag: bool=True) -> float:
+    def get_checklength(self, node: Node, with_sag: bool=True, pre_load: float = 50) -> float:
         length = 0.
         last_node = node
         while lines := self.get_lower_connected_lines(last_node):
             if len(lines) != 1:
-                raise ValueError(f"more than one line connected!")
-            line_length = self.get_line_length(lines[0], with_sag)
+                raise ValueError("more than one line connected!")
+            line_length = self.get_line_length(lines[0], with_sag, pre_load)
 
             length += line_length.get_checklength()
             
