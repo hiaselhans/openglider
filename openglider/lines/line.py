@@ -217,9 +217,13 @@ class Line(BaseModel):
             "density": max(0.0001, (self.line_type.weight or 0)/1000)  # g/m -> kg/m, min: 0,1g/m
         }
 
+        if color := self.line_type.colors.get(self.color, None):
+            poly_name = f"lines_#{color.hex()}"
+        else:
+            poly_name = "lines"
 
         line_poly = {
-            "lines": [
+            poly_name: [
                 Polygon(line_points[i:i + 2], attributes=attributes)
                 for i in range(len(line_points) - 1)
                 ]}

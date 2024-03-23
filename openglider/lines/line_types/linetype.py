@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from openglider.utils.colors import Color
 from openglider.utils.dataclass import dataclass, Field
 import logging
 
@@ -18,7 +19,7 @@ class LineType:
     weight: float = 0
     sheated: bool = False
     seam_correction: float = 0
-    colors: list[str] = Field(default_factory=lambda: [])
+    colors: dict[str, Color | None] = Field(default_factory=lambda: {})
     color: str | None = None
     cw: float = 1.1
 

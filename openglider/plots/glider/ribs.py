@@ -387,11 +387,11 @@ class RibPlot:
             start = get_x_value(self.x_values, -x)
             inner_start = start
 
-            end = get_x_value(self.x_values, x)
-            inner_end = end
+            stop = get_x_value(self.x_values, x)
+            inner_end = stop
 
             trailing_edge = [
-                self.inner.get(end),
+                self.inner.get(stop),
                 self.inner.get(start),
                 self.outer.get(start)
             ]        

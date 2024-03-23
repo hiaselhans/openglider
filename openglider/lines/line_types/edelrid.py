@@ -1,4 +1,5 @@
 from openglider.lines.line_types.linetype import LineType
+from openglider.utils.colors import Color
 
 def A8001(strength: int, diameter: float, weight: float) -> None:
     LineType(
@@ -8,8 +9,13 @@ def A8001(strength: int, diameter: float, weight: float) -> None:
         10*strength,
         weight,
         sheated=False,
-        colors=["orange", "blue", "magenta", ]
-        )
+        colors={
+            "orange": Color.parse_hex("ff6600"),
+            "blue": Color.parse_hex("0f52ba"),
+            "magenta": Color.parse_hex("c92351"),
+            "nature": Color.parse_hex("CABB84")
+        }
+    )
 
 
 A8001(25, 0.4, 0.15)
