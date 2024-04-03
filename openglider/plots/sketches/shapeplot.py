@@ -15,7 +15,7 @@ from openglider.glider.cell.panel import Panel, PanelCut
 from openglider.utils.dataclass import dataclass
 from openglider.vector.drawing import Layout, PlotPart
 from openglider.vector.text import Text
-from openglider.vector.unit import Percentage
+from openglider.vector.unit import Length, Percentage
 
 logger = logging.getLogger(__name__)
 
@@ -223,10 +223,10 @@ class ShapePlot:
 
     def draw_attachment_points(self, add_text: bool=True, left: bool=False) -> None:
         part = PlotPart()
-        points = self._get_attachment_point_positions()
+        points = self._get_attachment_point_positions(left=left)
 
         for name, p1 in points.items():
-            p2 = p1 + euklid.vector.Vector2D([0.2, 0])
+            p2 = p1 + euklid.vector.Vector2D([0.1, 0])
 
 
             diff = (p2-p1)*0.2
@@ -337,7 +337,7 @@ class ShapePlot:
 
         return self
 
-    def draw_lines(self, left: bool=True) -> ShapePlot:
+    def draw_lines(self, left: bool=True, add_text: bool=False) -> ShapePlot:
         #self.draw_design(lower=True)
         #self.draw_design(lower=True, left=True)
         #self.draw_attachment_points(True)
@@ -392,26 +392,46 @@ class ShapePlot:
                 lines += all_upper_lines(line.upper_node)
             
             return lines
+        
+        text_width = self.glider_3d.span / 300
+        diff_vect = euklid.vector.Vector2D([text_width, 0])
+        def insert_line(glider_line: Line, index: int) -> PlotPart:
+            pp = PlotPart()
+            layer = pp.layers[f"line_{glider_line.name}"]
+            line = euklid.vector.PolyLine2D([
+                # TODO: fix!
+                all_nodes[glider_line.upper_node],
+                all_nodes[glider_line.lower_node]
+            ])
+            if index % 2:
+                line = line.scale(euklid.vector.Vector2D([-1, 1]))
 
-        for i, node in enumerate(lower):
-            left = bool(i % 2)
+            text = Text(
+                glider_line.name,
+                line.nodes[0],
+                line.nodes[0]+diff_vect,
+                size=text_width,
+                #align="center",
+                valign=-0.6,
+                ).get_vectors()
+            pp.layers["text"] += text
+            layer += [line]
 
+            return pp
+
+        i = 0
+        for node in lower:
             get_node_position(node)
+            base_lines = self.glider_3d.lineset.get_upper_connected_lines(node)
+            base_lines_sorted = self.glider_3d.lineset.sort_lines(base_lines, by_names=True)
 
-            for glider_line in all_upper_lines(node):
-                pp = PlotPart()
-                layer = pp.layers[f"line_{i}"]
-                line = euklid.vector.PolyLine2D([
-                    # TODO: fix!
-                    all_nodes[glider_line.lower_node],
-                    all_nodes[glider_line.upper_node]
-                ])
+            for line in base_lines_sorted:
+                self.drawing.parts.append(insert_line(line, i))
 
-                if left:
-                    line = line.scale(euklid.vector.Vector2D([-1, 1]))
-
-                layer += [line]
-                self.drawing.parts.append(pp)
+                for upper_line in all_upper_lines(line.upper_node):
+                    self.drawing.parts.append(insert_line(upper_line, i))
+            
+                i += 1
 
         return self
 

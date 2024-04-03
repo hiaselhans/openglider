@@ -1,4 +1,3 @@
-from typing import Dict, Any
 from openglider.glider.project import GliderProject
 from openglider.plots.sketches.shapeplot import ShapePlot
 from openglider.plots.sketches.lineplan import LinePlan
@@ -18,7 +17,9 @@ def get_all_plots(project: GliderProject) -> dict[str, ShapePlot]:
     lineplan = LinePlan(project)  #.draw_shape().draw_attachment_points()
     lineplan.draw_cells()
     lineplan.draw_cells(left=True)
-    lineplan.draw_lines()
+    lineplan.draw_attachment_points(add_text=False)
+    lineplan.draw_attachment_points(add_text=False, left=True)
+    lineplan.draw_lines(add_text=True)
 
     base_shape = ShapePlot(project)
     base_shape.draw_cells()

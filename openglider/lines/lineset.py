@@ -625,53 +625,43 @@ class LineSet:
     
     node_group_rex = re.compile(r"[^A-Za-z]*([A-Za-z]*)[^A-Za-z]*")
 
-    def rename_lines(self) -> LineSet:
-        floors = max(self.floors.values(), default=0)
-
-        # get all upper nodes + all connected lines
-        upper_nodes = []
-        for attachment_point in self.attachment_points:
-            upper_nodes += self.get_upper_influence_nodes(node=attachment_point)
-        lines = []
-        for node in upper_nodes:
-            lines += self.get_lower_connected_lines(node)
-
-        for floor in range(floors):
+    def rename_lines(self) -> LineSet:            
+        def get_floor(line: Line) -> tuple[int, list[str]]:
+            upper_lines = self.get_upper_connected_lines(line.upper_node)
             
-            lines_grouped: dict[str, list[Line]] = {}
-            for line in lines:
-                # get all line layer chars (A/B/C/D/BR)
-                line_groups = set()
-                for node in self.get_upper_influence_nodes(line):
-                    if node.name:
-                        node_group = self.node_group_rex.match(node.name)
-                        if node_group:
-                            line_groups.add(node_group.group(1))
-                
-                line_groups_list = list(line_groups)
-                line_groups_list.sort()
-                line_group_name = "".join(line_groups_list)
+            if len(upper_lines) < 1:
+                prefix_name = "--"
+                if line.upper_node.name:
+                    node_group = self.node_group_rex.match(line.upper_node.name)
+                    if node_group:
+                        prefix_name = node_group.group(1)
+                return 1, [prefix_name]
+            
+            upper_lines_floors = [get_floor(l) for l in upper_lines]
+            floor = max([x[0] for x in upper_lines_floors]) + 1
+            prefixes = set()
+            for upper in upper_lines_floors:
+                for prefix in upper[1]:
+                    prefixes.add(prefix)
 
-                lines_grouped.setdefault(line_group_name, [])
-                lines_grouped[line_group_name].append(line)
-            
-            for name, group in lines_grouped.items():
-                group_sorted = self.sort_lines(group, x_factor=0.1)
-
-                for i, line in enumerate(group_sorted):
-                    line.name = f"{floor+1}_{name}{i+1}"
-            
-            lines_new = set()
-            for line in lines:
-                for lower_line in self.get_lower_connected_lines(line.lower_node):
-                    lines_new.add(lower_line)
-            
-            lines = list(lines_new)
+            prefix_lst = list(prefixes)
+            prefix_lst.sort()
         
+            return floor, prefix_lst
+
+        lines_by_prefix: dict[str, list[Line]] = {}
         for line in self.lines:
-            if line.upper_node.node_type != Node.NODE_TYPE.UPPER:
-                line.upper_node.name = line.name
-        
+            floor, prefixes = get_floor(line)
+            prefix = f"{floor}_{''.join(prefixes)}"
+
+            lines_by_prefix.setdefault(prefix, [])
+            lines_by_prefix[prefix].append(line)
+
+        for prefix, lines in lines_by_prefix.items():
+            lines_sorted = self.sort_lines(lines)
+            for i, line in enumerate(lines_sorted):
+                line.name = f"{prefix}{i+1:02d}"
+
         return self
     
     def get_line_length(self, line: Line, with_sag: bool=True, pre_load: float = 50) -> LineLength:
