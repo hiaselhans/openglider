@@ -152,6 +152,10 @@ class ParametricGlider:
 
             cuts: list[PanelCut] = self.tables.cuts.get(cell_no, allowance=self.allowances.design, resolvers=resolvers)
 
+            for cut in cuts:
+                if cut.cut_type == PANELCUT_TYPES.folded:
+                    cut.seam_allowance = self.allowances.entry
+
             all_values = [c.x_left for c in cuts] + [c.x_right for c in cuts]
 
             if -1 not in all_values:
