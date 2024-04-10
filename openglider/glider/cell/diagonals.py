@@ -95,6 +95,7 @@ class DiagonalRib(BaseModel):
     hole_border_front_back: float=0.15
 
     curve_factor: Percentage | None = None
+    curve_factor_2: Percentage | None = None
 
     def copy(self, **kwargs: Any) -> DiagonalRib:
         return copy.copy(self)
@@ -136,17 +137,31 @@ class DiagonalRib(BaseModel):
             right_length = right_2d.get_length()
 
             if left_length > right_length:
-                walk_length = left_length/2*self.curve_factor.si
+                walk_length = (left_length-right_length)/2
                 ik1 = left_2d.walk(0, walk_length)
                 ik2 = left_2d.walk(len(left_2d.nodes)-1, -walk_length)
-                
-                return left_2d.get(ik1), left_2d.get(ik2)
+
+                p1_1 = right_2d.nodes[0]
+                p1_2 = left_2d.get(ik1)
+
+                p2_1 = right_2d.nodes[-1]
+                p2_2 = left_2d.get(ik2)
+
             else:
-                walk_length = right_length/2*self.curve_factor.si
+                walk_length = (right_length-left_length)/2
                 ik1 = right_2d.walk(0, walk_length)
                 ik2 = right_2d.walk(len(right_2d.nodes)-1, -walk_length)
+
+                p1_1 = left_2d.nodes[0]
+                p1_2 = right_2d.get(ik1)
+
+                p2_1 = left_2d.nodes[-1]
+                p2_2 = right_2d.get(ik2)
                 
-                return right_2d.get(ik1), right_2d.get(ik2)
+            cp1 = p1_1 + (p1_2-p1_1) * self.curve_factor
+            cp2 = p2_1 + (p2_2 - p2_1) * self.curve_factor
+
+            return cp1, cp2
         
         return None
     

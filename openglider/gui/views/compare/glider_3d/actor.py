@@ -71,14 +71,14 @@ class GliderActors:
 
         return mesh_view
     
-    def get_diagonals(self, hole_numpoints: int) -> MeshView:
+    def get_diagonals(self, hole_numpoints: int, numribs: int) -> MeshView:
         if self.glider_3d is None:
             raise ValueError("Glider3D not set")
 
         mesh = openglider.mesh.Mesh()
         for cell_no, cell in enumerate(self.glider_3d.cells):
             for diagonal in cell.diagonals:
-                cell_mesh = diagonal.get_mesh(cell, 2, False, hole_numpoints)
+                cell_mesh = diagonal.get_mesh(cell, numribs, False, hole_numpoints)
 
                 mesh += cell_mesh
                 if cell_no > 0 or not self.glider_3d.has_center_cell:
@@ -88,14 +88,14 @@ class GliderActors:
         mesh_view.draw_mesh(mesh)
         return mesh_view
 
-    def get_straps(self) -> MeshView:
+    def get_straps(self, numribs: int) -> MeshView:
         if self.glider_3d is None:
             raise ValueError("Glider3D not set")
             
         mesh = openglider.mesh.Mesh()
         for cell_no, cell in enumerate(self.glider_3d.cells):
             for diagonal in cell.straps:
-                cell_mesh = diagonal.get_mesh(cell, 2)
+                cell_mesh = diagonal.get_mesh(cell, numribs)
 
                 mesh += cell_mesh
                 if cell_no > 0 or not self.glider_3d.has_center_cell:
@@ -138,8 +138,8 @@ class GliderActors:
                 "panels": self.get_panels(config.numribs),
                 "ribs": self.get_ribs(config.hole_numpoints),
                 "lines": self.get_lines(config.line_numpoints),
-                "diagonals": self.get_diagonals(config.hole_numpoints),
-                "straps": self.get_straps(),
+                "diagonals": self.get_diagonals(config.hole_numpoints, config.numribs),
+                "straps": self.get_straps(config.numribs),
                 "miniribs": self.get_miniribs()
 
             }
