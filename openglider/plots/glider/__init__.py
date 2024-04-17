@@ -156,19 +156,33 @@ class PlotMaker:
 
     def get_dribs(self) -> PlotPartDict:
         self.dribs.clear()
+        weight = MaterialUsage()
+
         for cell in self.glider_3d.cells:
             # missing attachmentpoints []
-            dribs = self._get_cellplotmaker(cell).get_dribs()
+            pm = self._get_cellplotmaker(cell)
+            dribs = pm.get_dribs()
             self.dribs[cell] = dribs[:]
+
+            weight += pm.consumption_drib *2
+
+
+        self.weight["dribs"] = weight
 
         return self.dribs
 
     def get_straps(self) -> PlotPartDict:
         self.straps.clear()
+        weight = MaterialUsage()
+
         for cell in self.glider_3d.cells:
             # missing attachmentpoints []
-            straps = self._get_cellplotmaker(cell).get_straps()
+            pm = self._get_cellplotmaker(cell)
+            straps = pm.get_straps()
             self.straps[cell] = straps[::-1]
+            weight += pm.consumption_straps *2
+
+        self.weight["straps"] = weight
 
         return self.straps
 
@@ -184,10 +198,15 @@ class PlotMaker:
     
     def get_miniribs(self) -> PlotPartDict:
         self.miniribs.clear()
+        weight = MaterialUsage()
 
         for cell in self.glider_3d.cells:
-            miniribs = self._get_cellplotmaker(cell).get_miniribs()
+            pm = self._get_cellplotmaker(cell)
+            miniribs = pm.get_miniribs()
             self.miniribs[cell] = miniribs
+            weight += pm.consumption_mribs *2
+
+        self.weight["mribs"] = weight
 
         return self.miniribs
 
