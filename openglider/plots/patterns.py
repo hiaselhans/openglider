@@ -8,6 +8,9 @@ from typing import Any
 from pathlib import Path
 
 import openglider.glider
+from openglider.glider.cell.diagonals import DiagonalSide
+from openglider.glider.cell.panel import Panel
+from openglider.glider.rib.rib import Rib
 import openglider.plots.cuts
 import openglider.plots.marks
 import openglider.plots.spreadsheets
@@ -162,7 +165,9 @@ class Patterns(PatternsNew):
             upper = [panel for panel in cell.panels if not panel.is_lower()]
             lower = [panel for panel in cell.panels if panel.is_lower()]
 
-            sort_func = lambda panel: abs(panel.mean_x())
+            def sort_func(panel: Panel):
+                return abs(panel.mean_x())
+
             upper.sort(key=sort_func)
             lower.sort(key=sort_func)
 
@@ -180,7 +185,7 @@ class Patterns(PatternsNew):
         curves = glider.get_attachment_point_layers()
 
         for cell_no, cell in enumerate(glider.cells):
-            cell_layers = []
+            cell_layers: list[tuple[str, float]] = []
             for curve_name, curve in curves.items():
                 if curve.nodes[-1][0] > cell_no:
                     cell_layers.append((curve_name, curve.get_value(cell_no)))
@@ -190,14 +195,11 @@ class Patterns(PatternsNew):
             
             layers_between: dict[str, int] = {}
             
-            def get_name(position: float) -> str:
+            def get_name(position: DiagonalSide, rib: Rib) -> str:
                 name = "-"
                 
                 for layer_name, pct in cell_layers:
-                    if pct == position:
-                        return layer_name
-                        
-                    if pct < position:
+                    if abs(position.end_x(rib).si) >= pct:
                         name = layer_name
                     
                 layers_between.setdefault(name, 0)
@@ -208,10 +210,13 @@ class Patterns(PatternsNew):
             straps = cell.straps[:]
             straps.sort(key=lambda strap: strap.get_average_x())
             for strap in straps:
-                strap.name = f"{cell_no+1}{get_name(abs(strap.left.center))}"
+                strap.name = f"{cell_no+1}{get_name(strap.left, cell.rib1)}"
 
             layers_between = {}
             diagonals = cell.diagonals[:]
             diagonals.sort(key=lambda diagonal: diagonal.get_average_x())
             for diagonal in diagonals:
-                diagonal.name = f"D{cell_no+1}{get_name(abs(diagonal.left.center))}"
+                if diagonal.left.height < 0:
+                    diagonal.name = f"D{cell_no+1}{get_name(diagonal.left, cell.rib1)}"
+                else:
+                    diagonal.name = f"D{cell_no+1}{get_name(diagonal.right, cell.rib2)}"
