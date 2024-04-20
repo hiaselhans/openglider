@@ -15,7 +15,7 @@ def setup_plugins(app: GliderApp=None) -> list[str]:
     installed_packages = pkgutil.iter_modules()
     for p in installed_packages:
         if p.name.startswith("openglider") and p.name != "openglider":
-            print(f"using plugin: {p.name}")
+            logger.info(f"using plugin: {p.name}")
             try:
                 module = importlib.import_module(p.name)
                 init = getattr(module, "init", None)

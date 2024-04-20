@@ -1,4 +1,5 @@
 import getpass
+from pathlib import Path
 import platform
 from typing import Any
 
@@ -12,6 +13,7 @@ class GlobalConfig(Config):
     json_allowed_modules = [r"openglider\..*", r"euklid\..*", r"pyfoil\..*"]
     json_forbidden_modules = [r".*eval", r".*subprocess.*"]
     user = f"{platform.node()}/{getpass.getuser()}"
+    home_directory = Path.home() / "openglider"
 
 
 config = GlobalConfig()

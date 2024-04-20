@@ -41,6 +41,8 @@ class Material:
         return (color.r, color.g, color.b)
 
     def _set_color_code(self, color_code: str) -> None:
+        if color_code.startswith("#"):
+            color_code = color_code[1:]
         color_code_int = int(color_code, base=16)
 
         if color_code_int < 0 or color_code_int > int("FFFFFF", base=16):

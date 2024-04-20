@@ -245,7 +245,7 @@ class DribPlot:
 
         for curve in self.drib.get_holes(self.cell)[0]:
             curve = curve.mirror(self.p1, self.p2)
-            #curve = curve.rotate(-self.angle, euklid.vector.Vector2D([0,0]))
+            curve = curve.rotate(-self.angle, euklid.vector.Vector2D([0,0]))
             plotpart.layers["cuts"].append(curve)
 
         plotpart.layers["stitches"] += [self.left, self.right]
