@@ -121,6 +121,7 @@ class CurvedStrap(StrapDTO):
         result = super().get_object()
         result.curve_factor = self.curve_factor
         result.num_folds = 0
+        result.material_code = self.material_code
         return result
 
 
