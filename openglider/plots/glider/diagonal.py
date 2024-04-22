@@ -4,7 +4,8 @@ import euklid
 from openglider.glider.cell import DiagonalRib
 from openglider.glider.cell.cell import Cell
 from openglider.plots.config import PatternConfig
-from openglider.plots.usage_stats import Material, MaterialUsage
+from openglider.plots.usage_stats import MaterialUsage
+from openglider.materials import cloth
 from openglider.utils.config import Config
 from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
@@ -266,9 +267,9 @@ class DribPlot:
     def get_material_usage(self) -> MaterialUsage:
         dwg = self.plotpart
 
-        curves = dwg.layers["envelope"].polylines
+        curves = dwg.layers["cuts"].polylines #was 'envelope' maybe a problem if numfolds > 0
         usage = MaterialUsage()
-        material = Material(weight=38, name="dribs")
+        material = cloth.get(dwg.material_code)
 
         if curves:
             area = curves[0].get_area()
@@ -278,9 +279,11 @@ class DribPlot:
                 
             usage.consume(material, area)
 
-        return usage
+        return usage 
 
 
 class StrapPlot(DribPlot):
     def flatten(self) -> PlotPart:
+        self.drib.material_code
+        self.drib.name
         return self._flatten(self.drib.num_folds)

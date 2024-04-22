@@ -558,7 +558,10 @@ class CellPlotMaker:
         self.config = self.DefaultConf(config)
         
         self.consumption = MaterialUsage()
-
+        self.consumption_drib = MaterialUsage()
+        self.consumption_straps = MaterialUsage()
+        self.consumption_mribs = MaterialUsage()
+        
         self._flattened_cell = None
     
     @cached_property("cell", "config.midribs")
@@ -620,8 +623,8 @@ class CellPlotMaker:
         for drib in diagonals[::-1]:
             drib_plot = self.DribPlot(drib, self.cell, self.config)
             dribs.append(drib_plot.flatten())
-            self.consumption += drib_plot.get_material_usage()
-        
+            self.consumption_drib += drib_plot.get_material_usage()
+
         return dribs
 
     def get_straps(self) -> list[PlotPart]:
@@ -631,7 +634,7 @@ class CellPlotMaker:
         for strap in straps:
             plot = self.StrapPlot(strap, self.cell, self.config)
             result.append(plot.flatten())
-            self.consumption += plot.get_material_usage()
+            self.consumption_straps += plot.get_material_usage()
         
         return result
     
@@ -650,6 +653,6 @@ class CellPlotMaker:
         for mrib in miniribs[::-1]:
             mrib_plot = self.MiniRibPlot(mrib, self.cell, self.config)
             mribs.append(mrib_plot.flatten())
-            self.consumption += mrib_plot.get_material_usage()
+            self.consumption_mribs += mrib_plot.get_material_usage()
         
         return mribs

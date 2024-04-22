@@ -10,8 +10,8 @@ from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
 from openglider.vector.unit import Percentage
 from openglider.glider.rib import MiniRib
-from openglider.plots.usage_stats import Material, MaterialUsage
-
+from openglider.plots.usage_stats import MaterialUsage
+from openglider.materials import cloth
 
 
 
@@ -138,9 +138,9 @@ class MiniRibPlot:
     def get_material_usage(self) -> MaterialUsage:
         dwg = self.plotpart
 
-        curves = dwg.layers["envelope"].polylines
+        curves = dwg.layers["cuts"].polylines
         usage = MaterialUsage()
-        material = Material(weight=38, name="mribs")
+        material = cloth.get(dwg.material_code) #Material(weight=38, name="mribs")
 
         if curves:
             area = curves[0].get_area()

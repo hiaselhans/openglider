@@ -115,11 +115,13 @@ class Strap3DTO(StrapDTO):
 
 class CurvedStrap(StrapDTO):
     curve_factor: Percentage
+    material_code: str
 
     def get_object(self) -> TensionStrap:
         result = super().get_object()
         result.curve_factor = self.curve_factor
         result.num_folds = 0
+        result.material_code = self.material_code
         return result
 
 

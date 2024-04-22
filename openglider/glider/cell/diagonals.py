@@ -328,7 +328,7 @@ class DiagonalRib(BaseModel):
 class TensionStrap(DiagonalRib):
     hole_num: int=0
 
-    def __init__(self, left: Percentage, right: Percentage, width: Percentage | Length, height: float=-1, **kwargs: Any) -> None:
+    def __init__(self, left: Percentage, right: Percentage, width: Percentage | Length, height: float=-1, material_code: str="", name: str="",  **kwargs: Any) -> None:
         """
         Similar to a Diagonalrib but always connected to the bottom-sail.
         :param left: left center of TensionStrap as x-value
@@ -341,7 +341,7 @@ class TensionStrap(DiagonalRib):
         left_side = DiagonalSide(center=left, width=width, height=height)
         right_side = DiagonalSide(center=right, width=width, height=height)
 
-        super().__init__(left=left_side, right=right_side, **kwargs)
+        super().__init__(left=left_side, right=right_side, material_code=material_code, name=name, **kwargs)
 
     def get_side_controlpoints(
             self,
