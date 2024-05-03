@@ -27,7 +27,7 @@ class MaterialRegistry:
                 material = Material(
                     manufacturer=line[0],
                     name=line[1],
-                    weight=line[2],
+                    weight=float(line[2]),
                     color=line[3],
                     color_code=line[4]
                 )
@@ -45,8 +45,15 @@ class MaterialRegistry:
         name = name.lower()
         if name in self.materials:
             return self.materials[name]
+        
+        name_parts = name.split(".")
+        name_parts_len = len(name_parts)
+        for material in self.materials:
+            short_name = material.split(".")[:name_parts_len]
+            if len(short_name) == name_parts_len and all([p1 == p2 for p1, p2 in zip(name_parts, short_name)]):
+                return self.materials[material]
 
-        #logger.warning(f"material not found: {name}")
+        logger.warning(f"material not found: {name}")
 
         return self.base_type(name=name)
 
