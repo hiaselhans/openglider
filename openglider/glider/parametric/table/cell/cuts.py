@@ -27,6 +27,14 @@ class FoldedCut(DesignCut):
 class Cut3D(DesignCut):
     _cut_type = PANELCUT_TYPES.cut_3d
 
+class Cut3DSigma(Cut3D):
+    sigma: float
+
+    def get_object(self, seam_allowance: Length = Length(0)) -> PanelCut:
+        cut = super().get_object(seam_allowance=seam_allowance)
+        cut.cut_3d_sigma = self.sigma
+        return cut
+
 class SingleSkinCut(DesignCut):
     _cut_type = PANELCUT_TYPES.singleskin
 
@@ -53,6 +61,7 @@ class CutTable(CellTable):
         "folded": FoldedCut,
 
         "CUT3D": Cut3D,
+        "CUT3DSIGMA": Cut3DSigma,
         "cut_3d": Cut3D,
 
         "singleskin": SingleSkinCut,
