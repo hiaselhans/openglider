@@ -140,16 +140,14 @@ class MiniRibPlot:
 
         curves = dwg.layers["cuts"].polylines
         usage = MaterialUsage()
-        material = cloth.get(dwg.material_code) #Material(weight=38, name="mribs")
+        material = cloth.get(dwg.material_code)
 
         if curves:
             area = curves[0].get_area()
 
-        #to do implement holes for miniribs
-        #
-        #    for curve in self.mrib.get_holes(self.cell)[0]:
-        #        area -= curve.get_area()
-        #        
+        #to do implement holes for miniribs--> check if its working!!
+            for curve in self.minirib.get_holes(self.cell)[0]:
+                area -= curve.get_area()      
             usage.consume(material, area)
 
         return usage
@@ -173,6 +171,9 @@ class MiniRibPlot:
         plotpart.layers[self.layer_name_sewing].append(self.inner)
                 
         plotpart.layers[self.layer_name_outline].append(envelope)
+
+        for curve in self.minirib.get_holes(self.cell)[0]:
+            plotpart.layers["cuts"].append(curve)
 
         self.add_text(plotpart)
 
