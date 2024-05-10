@@ -53,7 +53,6 @@ class Cell(BaseModel):
     name: str = "unnamed"
 
     ballooning_modifiers: list[BallooningModifier] = Field(default_factory=list)
-    sigma_3d_cut: float = 0.06
 
     diagonal_naming_scheme: ClassVar[str] = "{cell.name}d{diagonal_no}"
     strap_naming_scheme: ClassVar[str] = "{cell.name}s{side}{diagonal_no}"
@@ -567,7 +566,7 @@ class Cell(BaseModel):
         midribs = self.get_midribs(len(flat.inner))
 
         for panel in panels:
-            amount_front, amount_back = panel.integrate_3d_shaping(self, self.sigma_3d_cut, flat.inner, midribs)
+            amount_front, amount_back = panel.integrate_3d_shaping(self, flat.inner, midribs)
 
             add_amount(panel.cut_front, amount_front)
             add_amount(panel.cut_back, amount_back)

@@ -35,6 +35,7 @@ class PanelCut(BaseModel):
     cut_type: PANELCUT_TYPES
     seam_allowance: Length = Field(default_factory=lambda: Length(0))
     cut_3d_amount: list[float] = Field(default_factory=lambda: [0, 0])
+    cut_3d_sigma: float = 0.06
     x_center: Percentage | None = None
 
     def __json__(self) -> dict[str, Any]:
@@ -449,7 +450,7 @@ class Panel(BaseModel):
 
         return i1, i2
 
-    def integrate_3d_shaping(self, cell: Cell, sigma: float, inner_2d: list[euklid.vector.PolyLine2D], midribs: list[Profile3D] | None=None) -> tuple[list[float], list[float]]:
+    def integrate_3d_shaping(self, cell: Cell, inner_2d: list[euklid.vector.PolyLine2D], midribs: list[Profile3D] | None=None) -> tuple[list[float], list[float]]:
         """
         :param cell: the parent cell of the panel
         :param sigma: std-deviation parameter of gaussian distribution used to weight the length differences.
@@ -468,7 +469,6 @@ class Panel(BaseModel):
         front = []
         back = []
 
-        ff = math.sqrt(math.pi/2)*sigma
 
         for rib_no in range(numribs + 2):
             x1, x2 = positions[rib_no]
@@ -478,13 +478,12 @@ class Panel(BaseModel):
             lengthes_2d = rib_2d.get_segment_lengthes()
             lengthes_3d = rib_3d.get_segment_lengthes()
 
-            distance = 0.
             amount_front = 0.
             # influence factor: e^-(x^2/(2*sigma^2))
             # -> sigma = einflussfaktor [m]
             # integral = sqrt(pi/2)*sigma * [ erf(x / (sqrt(2)*sigma) ) ]
 
-            def integrate(lengths_2d: list[float], lengths_3d: list[float]) -> float:
+            def integrate(lengths_2d: list[float], lengths_3d: list[float], sigma: float) -> float:
                 amount = 0.
                 distance = 0.
 
@@ -496,44 +495,29 @@ class Panel(BaseModel):
                         amount += factor * x
                     distance += l3d
             
-                return amount
+                ff = math.sqrt(math.pi/2)*sigma
 
-            amount_back = integrate(lengthes_2d, lengthes_3d)
-            amount_front = integrate(lengthes_2d[::-1], lengthes_3d[::-1])
+                return amount * ff
+            
+            cut_3d_type = PANELCUT_TYPES.cut_3d
+            amount_back = amount_front = 0.
 
-            for l2d, l3d in zip(lengthes_2d, lengthes_3d):
-                if l3d > 0:
-                    factor = (l3d - l2d) / l3d
-                    x = math.erf( (distance + l3d) / (sigma*math.sqrt(2))) - math.erf(distance / (sigma*math.sqrt(2)))
+            if self.cut_back.cut_type == cut_3d_type:
+                amount_back = integrate(lengthes_2d, lengthes_3d, self.cut_back.cut_3d_sigma)
 
-                    amount_front += factor * x
-                distance += l3d
-
-            distance = 0
-            amount_back = 0
-
-            for l2d, l3d in zip(lengthes_2d[::-1], lengthes_3d[::-1]):
-                if l3d > 0:
-                    factor = (l3d - l2d) / l3d
-                    x = math.erf( (distance + l3d) / (sigma*math.sqrt(2))) - math.erf(distance / (sigma*math.sqrt(2)))
-                    amount_back += factor * x
-                distance += l3d
+            if self.cut_front.cut_type == cut_3d_type:
+                amount_front = integrate(lengthes_2d[::-1], lengthes_3d[::-1], self.cut_front.cut_3d_sigma)
 
             total = 0.
             for l2d, l3d in zip(lengthes_2d, lengthes_3d):
                 total += l3d - l2d
 
-
-            amount_front *= ff
-            amount_back *= ff
-
             cut_3d_type = PANELCUT_TYPES.cut_3d
 
-            if self.cut_front.cut_type != cut_3d_type and self.cut_back.cut_type != cut_3d_type:
-                if abs(amount_front + amount_back) > abs(total):
-                    normalization = abs(total / (amount_front + amount_back))
-                    amount_front *= normalization
-                    amount_back *= normalization
+            if abs(amount_front + amount_back) > abs(total):
+                normalization = abs(total / (amount_front + amount_back))
+                amount_front *= normalization
+                amount_back *= normalization
 
             if rib_no == 0 or rib_no == numribs+1:
                 amount_front = 0.
