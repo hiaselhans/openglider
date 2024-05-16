@@ -142,12 +142,13 @@ class ElementTable(Generic[ElementType]):
         index = 0
 
         for field_name, field in fields:
-            if dto._is_cell_tuple(field.annotation):
+            if tuple_type := dto._is_cell_tuple(field.annotation):
+                offset1, offset2 = tuple_type.index_offset
                 dct[field_name] = (
-                    resolvers[row].parse(data[index]),
-                    resolvers[row+1].parse(data[index+1])
+                    resolvers[row].parse(data[index+offset1]),
+                    resolvers[row+1].parse(data[index+offset2])
                 )
-                index += 2
+                index = index + 1 + max(tuple_type.index_offset)
             else:
                 if field.annotation == str:
                     dct[field_name] = data[index]

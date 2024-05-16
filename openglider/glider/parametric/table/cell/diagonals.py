@@ -1,7 +1,7 @@
 from typing import Any
 from openglider.glider.cell.diagonals import DiagonalRib, DiagonalSide, TensionLine, TensionStrap
 from openglider.glider.parametric.table.base import CellTable
-from openglider.glider.parametric.table.base.dto import DTO, CellTuple
+from openglider.glider.parametric.table.base.dto import DTO, CellTuple, SingleCellTuple
 
 import logging
 
@@ -46,11 +46,11 @@ class DiagonalWithHolesDTO(DiagonalDTO):
         return diagonal
 
 class FingerDiagonal(DTO):
-    lower_position: Percentage
-    lower_width: Percentage | Length
+    lower_position: SingleCellTuple[Percentage]
+    lower_width: SingleCellTuple[Percentage | Length]
 
-    upper_start: Percentage
-    upper_end: Percentage
+    upper_start: SingleCellTuple[Percentage]
+    upper_end: SingleCellTuple[Percentage]
 
     fingers: int
     direction_up: bool
@@ -60,13 +60,20 @@ class FingerDiagonal(DTO):
     def get_object(self) -> list[DiagonalRib]:
         assert self.fingers > 0
 
-        lower_side = DiagonalSide(center=self.lower_position, width=self.lower_width, height=-1)
-        upper_width = (self.upper_end - self.upper_start) / self.fingers
+        if self.direction_up:
+            lower_index = 0
+            upper_index = 1
+        else:
+            lower_index = 1
+            upper_index = 0
+
+        lower_side = DiagonalSide(center=self.lower_position[lower_index], width=self.lower_width[lower_index], height=-1)
+        upper_width = (self.upper_end[upper_index] - self.upper_start[upper_index]) / self.fingers
 
         upper_sides = [
             DiagonalSide(
-                center=self.upper_start + (i+0.5) * upper_width,
-                width=upper_width,    
+                center=self.upper_start[upper_index] + (i+0.5) * upper_width,
+                width=upper_width,
                 height=1.
                 )
             for i in range(self.fingers)
