@@ -35,7 +35,7 @@ class PanelCut(BaseModel):
     cut_type: PANELCUT_TYPES
     seam_allowance: Length = Field(default_factory=lambda: Length(0))
     cut_3d_amount: list[float] = Field(default_factory=lambda: [0, 0])
-    cut_3d_sigma: float = 0.06
+    cut_3d_sigma: float = 0.077
     x_center: Percentage | None = None
 
     def __json__(self) -> dict[str, Any]:
@@ -503,10 +503,10 @@ class Panel(BaseModel):
             amount_back = amount_front = 0.
 
             if self.cut_back.cut_type == cut_3d_type:
-                amount_back = integrate(lengthes_2d, lengthes_3d, self.cut_back.cut_3d_sigma)
+                amount_back = integrate(lengthes_2d[::-1], lengthes_3d[::-1], self.cut_back.cut_3d_sigma)
 
             if self.cut_front.cut_type == cut_3d_type:
-                amount_front = integrate(lengthes_2d[::-1], lengthes_3d[::-1], self.cut_front.cut_3d_sigma)
+                amount_front = integrate(lengthes_2d, lengthes_3d, self.cut_front.cut_3d_sigma)
 
             total = 0.
             for l2d, l3d in zip(lengthes_2d, lengthes_3d):
