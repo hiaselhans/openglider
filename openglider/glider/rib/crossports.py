@@ -318,6 +318,7 @@ class AttachmentPointHole(RibHoleBase):
     def _get_holes_bottom(self, rib: Rib) -> list[PolygonHole]:
         envelope = self.get_envelope_airfoil(rib)
         lower_envelope = envelope.curve.get(envelope.noseindex, len(envelope.curve.nodes))
+        lower_interpolation = euklid.vector.Interpolation(lower_envelope.nodes)
 
         diagonal_border = rib.convert_to_percentage(self.border_diagonal).si
         side_border_pct = rib.convert_to_percentage(self.border_side)
@@ -326,9 +327,12 @@ class AttachmentPointHole(RibHoleBase):
         upper_2 = rib.profile_2d.align([(self.start+self.end)/2, 1])
         upper_3 = rib.profile_2d.align([self.end, -1])
 
+        start_ik = envelope.get_ik(self.start) - envelope.noseindex
+        end_ik = envelope.get_ik(self.end) - envelope.noseindex
+
         upper_with_border = euklid.vector.PolyLine2D([upper_1, upper_2, upper_3]).offset(diagonal_border)
-        cut_front = lower_envelope.cut(upper_with_border.nodes[0], upper_with_border.nodes[1])[0]
-        cut_end = lower_envelope.cut(upper_with_border.nodes[1], upper_with_border.nodes[2], cut_front[0])
+        cut_front = lower_envelope.cut(upper_with_border.nodes[0], upper_with_border.nodes[1], start_ik)
+        cut_end = lower_envelope.cut(upper_with_border.nodes[1], upper_with_border.nodes[2], end_ik)
 
         lower = euklid.vector.Interpolation(lower_envelope.get(cut_front[0], cut_end[0]).nodes)
         upper = euklid.vector.Interpolation(upper_with_border.get(cut_front[1], 1+cut_end[1]).nodes)

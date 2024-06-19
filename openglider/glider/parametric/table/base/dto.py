@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 import types
-from typing import Any, Generic, Self, TypeVar
+from typing import Any, ClassVar, Generic, Self, TypeVar
 
 from openglider.utils.dataclass import BaseModel
 import pydantic
@@ -14,10 +14,20 @@ TupleType = TypeVar("TupleType")
 class CellTuple(BaseModel, Generic[TupleType]):
     model_config = pydantic.ConfigDict(
         arbitrary_types_allowed=True,
-        extra=pydantic.Extra.forbid
+        extra="forbid"
         )
+    index_offset: ClassVar[tuple[int, int]] = (0, 1)
     first: TupleType
     second: TupleType
+
+    def __getitem__(self, index: int) -> TupleType:
+        if index == 0:
+            return self.first
+        elif index == 1:
+            return self.second
+        
+        raise ValueError(f"invalid index: {index}")
+
     
     @classmethod
     def from_value(cls, value: TupleType) -> Self:
@@ -36,6 +46,10 @@ class CellTuple(BaseModel, Generic[TupleType]):
                 "first": v,
                 "second": v
             }
+
+class SingleCellTuple(CellTuple):
+    index_offset: ClassVar[tuple[int, int]] = (0, 0)
+
 
 _type_cache: dict[type[DTO], list[tuple[str, str]]] = {}
 
@@ -84,8 +98,11 @@ class DTO(BaseModel, Generic[ReturnType], abc.ABC):
                     inner_type = is_cell_tuple.__fields__["first"].annotation
                     inner_type_str = cls._get_type_string(inner_type)
 
-                    for side in ("1", "2"):
-                        result.append((f"{field_name} ({side})", inner_type_str))
+                    if sum(is_cell_tuple.index_offset) > 0:
+                        for side in is_cell_tuple.index_offset:
+                            result.append((f"{field_name} ({side+1})", inner_type_str))
+                    else:
+                        result.append((f"{field_name}", inner_type_str))
                 
                 else:
                     result.append((field_name, cls._get_type_string(field.annotation)))

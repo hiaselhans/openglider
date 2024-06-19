@@ -7,7 +7,7 @@ from openglider.lines.node import Node
 from openglider.utils.dataclass import BaseModel
 from openglider.utils.table import Table
 from openglider.vector import unit
-from openglider.vector.unit import Length
+from openglider.vector.unit import Angle, Length
 from openglider.version import __version__
 
 class ConfigTable(BaseModel):
@@ -93,6 +93,7 @@ class ParametricGliderConfig(ConfigTable):
     stabi_cell_thickness: float = 0.7
 
     use_mean_profile: bool = False
+    aoa_offset: Angle | None = None
 
     version: str = __version__
 
