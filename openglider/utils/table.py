@@ -185,7 +185,8 @@ class Table:
         ods_sheet = ezodf.Table(size=(rows, columns))
         for key in self.dct:
             column, row = self.str_decrypt(key)
-            ods_sheet[row, column].set_value(self.dct[key])
+            if self.dct[key] is not None:
+                ods_sheet[row, column].set_value(self.dct[key])
 
         if name:
             ods_sheet.name = name

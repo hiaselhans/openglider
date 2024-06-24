@@ -53,8 +53,11 @@ class GliderPreview(QtWidgets.QWidget):
     
     def get_active_view_name(self) -> str:
         index = self.tabs_widget.currentIndex()
-        name = self.tab_names[index]
-        return name
+        try:
+            name = self.tab_names[index]
+            return name
+        except IndexError:
+            return ""
     
     def set_tab(self) -> None:
         name = self.get_active_view_name()

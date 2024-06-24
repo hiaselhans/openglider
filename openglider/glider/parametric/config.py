@@ -2,6 +2,7 @@ import re
 from typing import Any, ClassVar, Self
 
 import euklid
+import pydantic
 
 from openglider.lines.node import Node
 from openglider.utils.dataclass import BaseModel
@@ -10,10 +11,25 @@ from openglider.vector import unit
 from openglider.vector.unit import Angle, Length
 from openglider.version import __version__
 
+adapters: dict[type, Any] = {}
+
+def get_adapter(cls: type) -> Any:
+    if cls not in adapters:
+        try:
+            adapter: Any = pydantic.TypeAdapter(cls).validate_python
+        except pydantic.errors.PydanticSchemaGenerationError:
+            adapter = cls
+        
+        adapters[cls] = adapter
+
+    return adapters[cls]
+
+
 class ConfigTable(BaseModel):
     @classmethod
     def _migrate_table(cls, data: dict[str, list[Any]]) -> dict[str, list[Any]]:
         return data
+    
     
     @classmethod
     def read_table(cls, table: Table) -> Self:
@@ -29,6 +45,8 @@ class ConfigTable(BaseModel):
         for key, value in raw_data.items():
             if key in cls.model_fields:
                 target_type = cls.model_fields[key].annotation
+                adapter = get_adapter(target_type)  # type: ignore
+
                 assert target_type is not None
 
                 if target_type == euklid.vector.Vector3D:
@@ -36,11 +54,16 @@ class ConfigTable(BaseModel):
                 else:
                     data_length = 1
                 
-
-                if data_length == 1:
-                    data[key] = target_type(value[0])
-                else:
-                    data[key] = target_type(value)
+                try:
+                    if data_length == 1:
+                        data[key] = adapter(value[0])
+                    else:
+                        data[key] = adapter(value)
+                except pydantic.ValidationError as e:
+                    if value[0]is None:
+                        continue
+                    else:
+                        raise e
 
         return cls(**data)
     

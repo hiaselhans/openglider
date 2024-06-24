@@ -4,10 +4,6 @@ from typing import TYPE_CHECKING
 import euklid
 import logging
 
-import pyfoil
-
-import openglider.airfoil
-
 from openglider.airfoil import Profile3D
 from openglider.utils.dataclass import dataclass, Field
 
@@ -16,7 +12,6 @@ from openglider.vector.unit import Length
 
 if TYPE_CHECKING:
     from openglider.glider.cell import Cell
-    from openglider.glider.cell.panel import Panel
 
 logger = logging.getLogger(__name__)
 

@@ -125,14 +125,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.glider_list = GliderListWidget(self, self.state.projects)
         self.glider_list.changed.connect(self.current_glider_changed)
 
-        self.overview = QtWidgets.QWidget(self.main_widget)
-        overview_layout = QtWidgets.QHBoxLayout()
-        self.overview.setLayout(overview_layout)
-        overview_layout.addWidget(self.glider_list, 25)
+        #self.overview = QtWidgets.QWidget(self.main_widget)
+
+        self.overview = QtWidgets.QSplitter(self.main_widget)
+        self.overview.setOrientation(QtCore.Qt.Orientation.Horizontal)
+        self.overview.addWidget(self.glider_list)
 
         self.glider_preview = GliderPreview(self.app)
-        overview_layout.addWidget(self.glider_preview, 75)
+        self.overview.addWidget(self.glider_preview)
 
+        self.overview.setSizes([200, 800])
         self.top_panel.addTab(self.overview, "Main")
 
         #self.diff_view = DiffView(self, self.state)
