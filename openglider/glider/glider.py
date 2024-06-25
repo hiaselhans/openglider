@@ -261,7 +261,6 @@ class Glider:
                 node.force *= mirror
 
         other2.lineset.lines += other.lineset.lines
-        other2.lineset._set_line_indices()
         other2.lineset.recalc()
 
         # rename

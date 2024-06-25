@@ -15,7 +15,12 @@ class BezierProfile2D(Profile2D):
     # controllpoints to zero.
     def __init__(self, data: euklid.vector.PolyLine2D=None, name: str="unnamed",
                  upper_spline: CurveType=None, lower_spline: CurveType=None):
-        super().__init__(data=data, name=name)
+        
+        new_data = []
+        if data is not None:
+            new_data += data.nodes
+
+        super().__init__(data=new_data, name=name)
         self.curve = self.normalized().curve
         if upper_spline is None:
             upper_spline = self.fit_upper()

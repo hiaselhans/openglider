@@ -506,10 +506,6 @@ class LineSet:
                     l.init_length -= diff
             self.recalc()
 
-    def _set_line_indices(self) -> None:
-        for i, line in enumerate(self.lines):
-            line.number = i
-
     @property
     def total_length(self) -> float:
         length = 0.

@@ -18,7 +18,7 @@ class MaterialRegistry:
             else:
                 logger.warning(f"file {path} not found")
 
-    def read_csv(self, path: Path):
+    def read_csv(self, path: Path) -> None:
         with open(path) as infile:
             data = csv.reader(infile)
             next(data)  # skip header line

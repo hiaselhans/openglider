@@ -47,7 +47,7 @@ class CellTuple(BaseModel, Generic[TupleType]):
                 "second": v
             }
 
-class SingleCellTuple(CellTuple):
+class SingleCellTuple(CellTuple[TupleType], Generic[TupleType]):
     index_offset: ClassVar[tuple[int, int]] = (0, 0)
 
 
