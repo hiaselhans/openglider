@@ -59,7 +59,7 @@ class View3D(QtWidgets.QWidget):
     def clear(self) -> None:
         self.renderer.RemoveAllViewProps()
         if self.show_axes:
-            self.show_actor(self.axes)
+            self.show_actor(self.axes)  # type: ignore
         self.rerender()
 
     def show_actor(self, actor: vtkActor) -> None:

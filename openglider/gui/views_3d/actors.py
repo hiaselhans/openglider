@@ -77,7 +77,7 @@ class Arrow(vtkmodules.vtkRenderingCore.vtkActor):
 
         # Apply the transforms
         self.transform = vtkmodules.vtkCommonTransforms.vtkTransform()
-        self.transform.Translate(start)
+        self.transform.Translate(*start)
         self.transform.Concatenate(matrix)
         self.transform.Scale(length, length, length)
 

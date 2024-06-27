@@ -136,7 +136,7 @@ def cached_function(*hashlist: str, exclude: list[str | None]=None, generator: C
         def wrapper(f: F) -> F:
             return f
         
-        return wrapper
+        return wrapper  # type: ignore
     
     else:
         def wrapper(getter):

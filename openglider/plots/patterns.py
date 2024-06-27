@@ -165,7 +165,7 @@ class Patterns(PatternsNew):
             upper = [panel for panel in cell.panels if not panel.is_lower()]
             lower = [panel for panel in cell.panels if panel.is_lower()]
 
-            def sort_func(panel: Panel):
+            def sort_func(panel: Panel) -> float:
                 return abs(panel.mean_x())
 
             upper.sort(key=sort_func)
