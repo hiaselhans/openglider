@@ -4,13 +4,15 @@ import logging
 from openglider.gui.wizzards.base import Wizard
 from openglider.gui.wizzards.input import input_wizzards
 from openglider.gui.wizzards.line_forces import LineForceView
+from openglider.gui.wizzards.uv_map import UVMapView
 
 logger = logging.getLogger(__name__)
 __all__ = ["menu_actions"]
 
 menu_actions: dict[str, list[tuple[type[Wizard], str]]] = {
     "view": [
-        (LineForceView, "Leinen")
+        (LineForceView, "Leinen"),
+        (UVMapView, "UV-Map")
     ],
     "edit": input_wizzards
 }
