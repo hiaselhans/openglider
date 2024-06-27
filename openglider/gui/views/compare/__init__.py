@@ -13,6 +13,7 @@ from openglider.gui.views.compare.rib import RibView
 from openglider.gui.views.compare.rib_plots import RibPlotView
 from openglider.gui.views.compare.shape import ShapeView
 from openglider.gui.views.compare.table.lines_diff import GliderLineSetTable
+from openglider.gui.views.compare.table.straps_diff import GliderStrapTable
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class GliderPreview(QtWidgets.QWidget):
             "Cells": CellView(app),
             "Table": GliderTable(app),
             "Lines": GliderLineSetTable(app),
+            "Straps": GliderStrapTable(app),
             "3D": Glider3DView(app)
         }
         self.tab_names = list(self.tabs.keys())
