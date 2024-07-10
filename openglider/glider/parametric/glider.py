@@ -505,7 +505,7 @@ class ParametricGlider:
 
             glider.ribs[-2].profile_2d *= self.config.stabi_cell_thickness
         
-        #glider.ribs[-1].profile_2d *= 0.
+        glider.ribs[-1].profile_2d *= self.config.last_profile_height
         glider.rename_parts()
 
 
