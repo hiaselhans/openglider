@@ -12,6 +12,13 @@ class TrailingEdgeCut(dto.DTO):
 
     def get_object(self) -> Length | Percentage:
         return self.length * -1
+    
+
+class RibZOffset(dto.DTO):
+    zoffset: Length | Percentage
+
+    def get_object(self) -> Length | Percentage:
+        return self.zoffset
 
 class SkinRib(dto.DTO):
     continued_min_end: Percentage
@@ -53,6 +60,7 @@ class SingleSkinTable(RibTable):
         "SkinRib": SkinRib,
         "SkinRib3": SkinRib3,
         "TrailingEdgeCut": TrailingEdgeCut,
+        "RibZOffset": RibZOffset,
     }
     
     def get_rib_args(self, rib_no: int, **kwargs: Any) -> dict[str, Any]:
@@ -74,3 +82,11 @@ class SingleSkinTable(RibTable):
             rotation = rot[-1]["angle"]
         
         return rotation
+    
+    def get_offset(self, rib_no: int, **kwargs: Any) -> float:
+        result = 0
+        offset: RibZOffset | None = self.get_one(rib_no, ["RibZOffset"], **kwargs)
+        if offset is not None:
+            result = offset
+        
+        return result

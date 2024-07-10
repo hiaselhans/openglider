@@ -432,6 +432,7 @@ class ParametricGlider:
                 chord=chord,
                 arcang=rib_angles[rib_no],
                 xrot=self.tables.rib_modifiers.get_xrot(rib_no),
+                offset=self.tables.rib_modifiers.get_offset(rib_no, resolvers=resolvers),
                 glide=self.glide,
                 aoa_absolute=aoa_values[rib_no],
                 zrot=zrot_int.get_value(abs(x_value)),
@@ -504,7 +505,7 @@ class ParametricGlider:
 
             glider.ribs[-2].profile_2d *= self.config.stabi_cell_thickness
         
-        glider.ribs[-1].profile_2d *= 0.
+        #glider.ribs[-1].profile_2d *= 0.
         glider.rename_parts()
 
 
