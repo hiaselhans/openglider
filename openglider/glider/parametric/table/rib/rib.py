@@ -1,6 +1,7 @@
 import logging
 from typing import Any
 
+
 from openglider.glider.parametric.table.base import Keyword, RibTable, dto
 from openglider.glider.rib.singleskin import SingleSkinParameters
 from openglider.vector.unit import Angle, Length, Percentage
@@ -14,11 +15,13 @@ class TrailingEdgeCut(dto.DTO):
         return self.length * -1
     
 
-class RibZOffset(dto.DTO):
+class RibOffset(dto.DTO):
+    xoffset: Length | Percentage
+    yoffset: Length | Percentage
     zoffset: Length | Percentage
 
-    def get_object(self) -> Length | Percentage:
-        return self.zoffset
+    def get_object(self) -> list:
+        return [self.xoffset, self.yoffset, self.zoffset]
 
 class SkinRib(dto.DTO):
     continued_min_end: Percentage
@@ -60,7 +63,7 @@ class SingleSkinTable(RibTable):
         "SkinRib": SkinRib,
         "SkinRib3": SkinRib3,
         "TrailingEdgeCut": TrailingEdgeCut,
-        "RibZOffset": RibZOffset,
+        "RibOffset": RibOffset
     }
     
     def get_rib_args(self, rib_no: int, **kwargs: Any) -> dict[str, Any]:
@@ -83,9 +86,10 @@ class SingleSkinTable(RibTable):
         
         return rotation
     
-    def get_offset(self, rib_no: int, **kwargs: Any) -> float:
-        result = 0
-        offset: RibZOffset | None = self.get_one(rib_no, ["RibZOffset"], **kwargs)
+    def get_offset(self, rib_no: int, **kwargs: Any) -> list[Length | Percentage]:
+        result = [0,0,0]
+        offset: RibOffset | None = self.get_one(rib_no, ["RibOffset"], **kwargs)
+
         if offset is not None:
             result = offset
         
