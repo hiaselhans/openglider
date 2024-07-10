@@ -290,8 +290,7 @@ def rib_rotation(aoa: float, arc: float, zrot: float, xrot: float=0) -> euklid.v
 def rib_transformation(aoa: float, arc: float, zrot: float, xrot: float, scale: float, pos: euklid.vector.Vector3D, offset: euklid.vector.Vector3D) -> euklid.vector.Transformation:
     scale_transform = euklid.vector.Transformation.scale(scale)  # type: ignore
     #scale = Scale(scale)
-    offset = euklid.vector.Transformation.translation(offset)  # type: ignore
-    move = euklid.vector.Transformation.translation(pos)  # type: ignore
     #move = Translation(pos)
     rot = rib_rotation(aoa, arc, zrot, xrot)  # type: ignore
-    return scale_transform * offset * rot * move 
+    move = euklid.vector.Transformation.translation(pos + rot.apply(offset))  # type: ignore
+    return scale_transform * rot * move 
