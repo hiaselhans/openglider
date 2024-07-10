@@ -112,7 +112,7 @@ class Rib(RibBase):
     arcang: float = 0.
     zrot: float = 0.
     xrot: float = 0.
-    offset: float = 0.
+    offset: list[Length | Percentage] = Field(default_factory=list)
 
     seam_allowance: Length
     trailing_edge_extra: Length | None
@@ -155,9 +155,14 @@ class Rib(RibBase):
 
     @cached_property('arcang', 'glide', 'zrot', 'xrot', 'aoa_absolute', 'chord', 'pos', 'offset')
     def transformation(self) -> euklid.vector.Transformation:  # type: ignore
-        zrot = np.arctan(self.arcang) / self.glide * self.zrot
-        return rib_transformation(self.aoa_absolute, self.arcang, zrot, self.xrot, self.chord, self.pos, self.offset)
+        xoffset = self.convert_to_chordlength(self.offset[0]).si
+        yoffset = self.convert_to_chordlength(self.offset[1]).si
+        zoffset = self.convert_to_chordlength(self.offset[2]).si
 
+        offset = euklid.vector.Vector3D([xoffset, yoffset, zoffset])
+        zrot = np.arctan(self.arcang) / self.glide * self.zrot
+        return rib_transformation(self.aoa_absolute, self.arcang, zrot, self.xrot, self.chord, self.pos, offset)
+    
     def rename_parts(self) -> None:
         for hole_no, hole in enumerate(self.holes):
             hole.name = self.hole_naming_scheme.format(hole_no, rib=self)
@@ -282,11 +287,11 @@ def rib_rotation(aoa: float, arc: float, zrot: float, xrot: float=0) -> euklid.v
     return rot3 * rot2 * rot1 * rot0
 
 
-def rib_transformation(aoa: float, arc: float, zrot: float, xrot: float, scale: float, pos: euklid.vector.Vector3D, offset: float) -> euklid.vector.Transformation:
+def rib_transformation(aoa: float, arc: float, zrot: float, xrot: float, scale: float, pos: euklid.vector.Vector3D, offset: euklid.vector.Vector3D) -> euklid.vector.Transformation:
     scale_transform = euklid.vector.Transformation.scale(scale)  # type: ignore
     #scale = Scale(scale)
-    pos = pos + euklid.vector.Vector3D([0, 0, offset])
+    offset = euklid.vector.Transformation.translation(offset)  # type: ignore
     move = euklid.vector.Transformation.translation(pos)  # type: ignore
     #move = Translation(pos)
     rot = rib_rotation(aoa, arc, zrot, xrot)  # type: ignore
-    return scale_transform * rot * move
+    return scale_transform * offset * rot * move 
