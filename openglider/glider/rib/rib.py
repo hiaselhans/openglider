@@ -112,6 +112,7 @@ class Rib(RibBase):
     arcang: float = 0.
     zrot: float = 0.
     xrot: float = 0.
+    offset: float = 0.
 
     seam_allowance: Length
     trailing_edge_extra: Length | None
@@ -152,10 +153,10 @@ class Rib(RibBase):
         zrot = np.arctan(self.arcang) / self.glide * self.zrot
         return rib_rotation(self.aoa_absolute, self.arcang, zrot, self.xrot)
 
-    @cached_property('arcang', 'glide', 'zrot', 'xrot', 'aoa_absolute', 'chord', 'pos')
+    @cached_property('arcang', 'glide', 'zrot', 'xrot', 'aoa_absolute', 'chord', 'pos', 'offset')
     def transformation(self) -> euklid.vector.Transformation:  # type: ignore
         zrot = np.arctan(self.arcang) / self.glide * self.zrot
-        return rib_transformation(self.aoa_absolute, self.arcang, zrot, self.xrot, self.chord, self.pos)
+        return rib_transformation(self.aoa_absolute, self.arcang, zrot, self.xrot, self.chord, self.pos, self.offset)
 
     def rename_parts(self) -> None:
         for hole_no, hole in enumerate(self.holes):
@@ -281,9 +282,10 @@ def rib_rotation(aoa: float, arc: float, zrot: float, xrot: float=0) -> euklid.v
     return rot3 * rot2 * rot1 * rot0
 
 
-def rib_transformation(aoa: float, arc: float, zrot: float, xrot: float, scale: float, pos: euklid.vector.Vector3D) -> euklid.vector.Transformation:
+def rib_transformation(aoa: float, arc: float, zrot: float, xrot: float, scale: float, pos: euklid.vector.Vector3D, offset: float) -> euklid.vector.Transformation:
     scale_transform = euklid.vector.Transformation.scale(scale)  # type: ignore
     #scale = Scale(scale)
+    pos = pos + euklid.vector.Vector3D([0, 0, offset])
     move = euklid.vector.Transformation.translation(pos)  # type: ignore
     #move = Translation(pos)
     rot = rib_rotation(aoa, arc, zrot, xrot)  # type: ignore
