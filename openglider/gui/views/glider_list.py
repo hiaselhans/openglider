@@ -2,6 +2,9 @@ from __future__ import annotations
 import asyncio
 
 import os
+import pathlib
+import subprocess
+import tempfile
 from typing import Any
 
 import openglider
@@ -27,21 +30,31 @@ class GliderListWidgetItemWidget(ListItemWidget[GliderProject]):
         self.button_save.clicked.connect(self.save)
         self.layout().addWidget(self.button_save)
 
-        self.button_reload = QtWidgets.QPushButton()
+        self.button_edit = QtWidgets.QPushButton()
+        self.button_edit.setFixedSize(30, 30)
+        self.button_edit.setIcon(qtawesome.icon("fa.edit"))
+        self.button_edit.clicked.connect(self.edit)
+        self.layout().addWidget(self.button_edit)
 
     def update(self, *args: Any, **kwargs: Any) -> None:
         super().update(*args, **kwargs)
-
-        if self.list_item.element.filename is None:
-            self.button_reload.setEnabled(False)
-            self.button_save.setEnabled(True)
-        else:
-            self.button_reload.setEnabled(True)
         
         if self.list_item.failed:
-            self.setStyleSheet(f"background-color: #880000;")
+            self.setStyleSheet("background-color: #880000;")
         else:
-            self.setStyleSheet(f"background-color: none;")
+            self.setStyleSheet("background-color: none;")
+
+    def edit(self) -> None:
+        if not self.list_item.element.filename:
+            tempdir = pathlib.Path(tempfile.gettempdir())
+            filename = str(tempdir / f"{self.list_item.name}.ods")
+            self.list_item.element.save(filename)
+            self.list_item.is_temporary = True
+        else:
+            filename = self.list_item.element.filename
+
+        subprocess.call(["xdg-open", filename])
+
 
     def save(self) -> str | None:
         filters = {
@@ -65,8 +78,12 @@ class GliderListWidgetItemWidget(ListItemWidget[GliderProject]):
         self.update()
         return filename
 
-class GliderListWidgetItem(ListWidgetItem[GliderProject, GliderListWidgetItemWidget]):    
+class GliderListWidgetItem(ListWidgetItem[GliderProject, GliderListWidgetItemWidget]):
+    # An item in the gliderlist
     def save(self) -> None:
+        pass
+
+    def edit(self) -> None:
         pass
 
     def get_widget(self, parent: GliderListWidget, element: GliderListItem) -> GliderListWidgetItemWidget:  # type: ignore
@@ -74,7 +91,6 @@ class GliderListWidgetItem(ListWidgetItem[GliderProject, GliderListWidgetItemWid
 
         widget.changed.connect(lambda: self._changed)
         widget.button_remove.clicked.connect(lambda: self._remove())
-        widget.button_save.clicked.connect(lambda: self.save())
         #widget.button_reload.clicked.connect(lambda: self.parent)
 
         return widget

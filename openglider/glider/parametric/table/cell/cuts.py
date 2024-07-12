@@ -64,6 +64,8 @@ class CutTable(CellTable):
         "CUT3DSIGMA": Cut3DSigma,
         "cut_3d": Cut3D,
 
+        "CUT_ROUND": CutRound,
+
         "singleskin": SingleSkinCut,
     }
     

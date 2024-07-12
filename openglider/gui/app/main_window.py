@@ -310,7 +310,10 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         Ask to save unsaved gliders
         """
-        unsaved_gliders = [p for p in self.glider_projects if p.filename is None]
+        unsaved_gliders = [
+            p for p in self.state.projects.elements.values()
+            if p.is_temporary or p.element.filename is None
+        ]
 
         if len(unsaved_gliders):
             msgBox = QtWidgets.QMessageBox()

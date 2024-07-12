@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class GliderListItem(SelectionListItem[GliderProject]):
     mtime: float | None = None
+    is_temporary: bool = False
     failed: bool = False
 
 
