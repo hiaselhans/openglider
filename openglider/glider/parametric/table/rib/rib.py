@@ -16,12 +16,12 @@ class TrailingEdgeCut(dto.DTO):
     
 
 class RibOffset(dto.DTO):
-    xoffset: Length | Percentage
-    yoffset: Length | Percentage
-    zoffset: Length | Percentage
+    x: Length | Percentage
+    y: Length | Percentage
+    z: Length | Percentage
 
     def get_object(self) -> list:
-        return [self.xoffset, self.yoffset, self.zoffset]
+        return [self.x, self.y, self.z]
 
 class SkinRib(dto.DTO):
     continued_min_end: Percentage
