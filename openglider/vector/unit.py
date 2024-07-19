@@ -60,7 +60,11 @@ class Quantity(pydantic.BaseModel):
         }
 
         if unit or display_unit:
-            dct["display_unit"] = unit or display_unit
+            display_unit_to_set = unit or display_unit
+            dct["display_unit"] = display_unit_to_set
+
+            if display_unit_to_set not in cls.unit_variants and display_unit_to_set != cls.unit:
+                raise ValueError(f"cannot use unit {display_unit_to_set} {cls.unit_variants} {cls}")
         
         return dct
 
@@ -73,7 +77,10 @@ class Quantity(pydantic.BaseModel):
     
     def _get_display_value(self) -> tuple[float, str]:
         if self.display_unit is not None and self.display_unit != self.unit:
-            return self.value / self.unit_variants[self.display_unit], self.display_unit
+            try:
+                return self.value / self.unit_variants[self.display_unit], self.display_unit
+            except KeyError:
+                raise ValueError(f"unit not available {self.display_unit} ({self.unit_variants}) {self.__class__}")
         
         # TODO: return best-fit unit instead
         

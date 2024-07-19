@@ -26,8 +26,8 @@ class SharknoseDTO(DTO):
         )
 
 class Sharknose8(SharknoseDTO):
-    angle_front: Angle
-    angle_back: Angle
+    angle_front: Percentage
+    angle_back: Percentage
     rigidfoil_circle_radius: Length
     rigidfoil_circle_amount: Length
 
