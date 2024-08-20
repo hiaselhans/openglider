@@ -26,7 +26,7 @@ class PlotMaker:
     panels: Layout
     ribs: list[PlotPart]
     dribs: PlotPartDict
-    straps: PlotPartDict
+    straps: collections.OrderedDict[Cell, tuple[list[PlotPart], list[PlotPart]]]
     rigidfoils: PlotPartDict
     miniribs: PlotPartDict
     seam_allowance: Length
@@ -171,15 +171,18 @@ class PlotMaker:
 
         return self.dribs
 
-    def get_straps(self) -> PlotPartDict:
+    def get_straps(self) -> collections.OrderedDict[tuple[list[PlotPart], list[PlotPart]]]:
         self.straps.clear()
         weight = MaterialUsage()
 
         for cell in self.glider_3d.cells:
             # missing attachmentpoints []
             pm = self._get_cellplotmaker(cell)
-            straps = pm.get_straps()
-            self.straps[cell] = straps[::-1]
+            upper, lower = pm.get_straps()
+            self.straps[cell] = (
+                upper,
+                lower
+            )
             weight += pm.consumption_straps *2
 
         self.weight["straps"] = weight
@@ -226,7 +229,13 @@ class PlotMaker:
             return Layout.stack_row(layout_lst, self.config.patterns_align_dist_x)
 
         dribs = stack_grid(self.dribs)
-        straps = stack_grid(self.straps)
+        straps_upper = Layout.stack_row([
+            Layout.stack_column(c[0], self.config.patterns_align_dist_y) for c in self.straps.values()
+        ], distance=self.config.patterns_align_dist_x)
+        straps_lower = Layout.stack_row([
+            Layout.stack_column(c[1], self.config.patterns_align_dist_y) for c in list(self.straps.values())
+        ], distance=self.config.patterns_align_dist_x)
+        straps = straps_upper.append_left(straps_lower, distance=self.config.patterns_align_dist_x)
         rigidfoils = stack_grid(self.rigidfoils)
         miniribs = stack_grid(self.miniribs)
 
@@ -259,7 +268,7 @@ class PlotMaker:
 
         if len(rigidfoils.parts):
             rigidfoils.draw_border()
-            rigidfoils.add_text(f"rigidfoils")
+            rigidfoils.add_text("rigidfoils")
             all_layouts.append(rigidfoils)
 
         if len(self.extra_parts):

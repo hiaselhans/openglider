@@ -44,9 +44,15 @@ class LineLength:
 
         return length
 
+    def get_cutting_length(self) -> float:
+        length = self.get_length()
+        length += self.seam_correction
+
+        return length
+
+
     def get_length(self) -> float:
         length = self.get_checklength()
-        length += self.seam_correction
         length += self.knot_correction
 
         return length
@@ -714,26 +720,9 @@ class LineSet:
         line_type_table = self._get_lines_table(lambda line: [f"{line.line_type.name} ({line.color})"], insert_node_names=False)
         line_color_table = self._get_lines_table(lambda line: [line.color], insert_node_names=False)
 
-        def get_checklength(line: Line, upper_lines: Any) -> list[float]:
-            line_length = self.get_line_length(line).get_checklength()
-            
-            if not len(upper_lines):
-                return [line_length]
-            else:
-                lengths = []
-                for upper in upper_lines:
-                    lengths += get_checklength(*upper)
-                
-                return [
-                    length + line_length for length in lengths
-                ]
-        
-        checklength_values = []
-        for line, upper_line in self.create_tree():
-            checklength_values += get_checklength(line, upper_line)
+        checklengths = self.get_checklengths()
         checklength_table = Table()
-        
-        for index, length in enumerate(checklength_values):
+        for index, length in enumerate(checklengths.values()):
             checklength_table[index+1, 0] = round(1000*length)
 
         length_table.append_right(checklength_table)
@@ -743,6 +732,42 @@ class LineSet:
         length_table.append_right(line_color_table)
 
         return length_table
+    
+    def get_checklengths(self) -> dict[str, float]:
+        def get_checklength(line: Line, upper_lines: Any) -> list[tuple[str, float]]:
+            line_length = self.get_line_length(line).get_checklength()
+            
+            if not len(upper_lines):
+                return [(line.upper_node.name, line_length)]
+            else:
+                lengths = []
+                for upper in upper_lines:
+                    lengths += get_checklength(*upper)
+                
+                return [
+                    (name, length + line_length) for name, length in lengths
+                ]
+        
+        checklength_values = []
+        for line, upper_line in self.create_tree():
+            checklength_values += get_checklength(line, upper_line)
+
+        return dict(checklength_values)
+
+    def get_checksheet(self) -> Table:
+        lengths = list(self.get_checklengths().items())
+        result = Table()
+        lengths.sort(key=lambda el: Table.str_decrypt(el[0]))
+        result[0,0] = "Name"
+        result[0,1] = "Length [mm]"
+
+        for i, (name, length) in enumerate(lengths):
+            result[i+1, 0] = name
+            result[i+1, 1] = f"{length*1000:.0f}"
+        
+        result.name = "checksheet"
+
+        return result
 
     def get_force_table(self) -> Table:
         def get_line_force(line: Line) -> list[str]:

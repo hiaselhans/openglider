@@ -134,7 +134,7 @@ class LineType:
                     <td>{line_type.min_break_load or 0:.02f}</td>
                     <td>{line_type.weight or 0:.02f}</td>
                     <td>{line_type.seam_correction:.04f}</td>
-                    <td>{line_type.colors}</td>
+                    <td>{", ".join(line_type.colors)}</td>
                 </tr>
 
                 """

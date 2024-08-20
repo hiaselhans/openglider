@@ -23,19 +23,18 @@ def point2d(p1_3d: V3, p1_2d: V2, p2_3d: V3, p2_2d: V2, point_3d: V3) -> V2:
 
 def flatten_list(
     list1: euklid.vector.PolyLine3D,
-    list2: euklid.vector.PolyLine3D
+    list2: euklid.vector.PolyLine3D,
+    to_right: bool = True
     ) -> tuple[euklid.vector.PolyLine2D, euklid.vector.PolyLine2D]:
-    
-    if not isinstance(list1, euklid.vector.PolyLine3D):
-        list1 = euklid.vector.PolyLine3D(list1.data.tolist())
-    if not isinstance(list2, euklid.vector.PolyLine3D):
-        list2 = euklid.vector.PolyLine3D(list2.data.tolist())
 
     nodes_1 = list1.nodes
     nodes_2 = list2.nodes
     index_left = index_right = 0
-    flat_left = [euklid.vector.Vector2D([0, 0])]
-    flat_right = [euklid.vector.Vector2D([(nodes_1[0]-nodes_2[0]).length(), 0])]
+    flat_1 = [euklid.vector.Vector2D([0, 0])]
+    x_factor = 1.
+    if not to_right:
+        x_factor = -1.
+    flat_2 = [euklid.vector.Vector2D([x_factor * (nodes_1[0]-nodes_2[0]).length(), 0])]
 
     # def which(i, j):
     #     diff = list1[i] - list2[j]
@@ -43,15 +42,15 @@ def flatten_list(
     while True:
         #while which(index_left, index_right) <= 0 and index_left < len(list1) - 2:  # increase left_index
         if index_left < len(nodes_1) - 1:
-            flat_left.append(point2d(nodes_1[index_left], flat_left[index_left],
-                                     nodes_2[index_right], flat_right[index_right],
+            flat_1.append(point2d(nodes_1[index_left], flat_1[index_left],
+                                     nodes_2[index_right], flat_2[index_right],
                                      nodes_1[index_left + 1]))
             index_left += 1
 
         #while which(index_left, index_right) >= 0 and index_right < len(list2) - 2:  # increase right_index
         if index_right < len(nodes_2) - 1:
-            flat_right.append(point2d(nodes_1[index_left], flat_left[index_left],
-                                      nodes_2[index_right], flat_right[index_right],
+            flat_2.append(point2d(nodes_1[index_left], flat_1[index_left],
+                                      nodes_2[index_right], flat_2[index_right],
                                       nodes_2[index_right + 1]))
             index_right += 1
 
@@ -70,4 +69,4 @@ def flatten_list(
     #                               list2[index_right + 1]))
     #     index_right += 1
 
-    return euklid.vector.PolyLine2D(flat_left), euklid.vector.PolyLine2D(flat_right)
+    return euklid.vector.PolyLine2D(flat_1), euklid.vector.PolyLine2D(flat_2)

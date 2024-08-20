@@ -25,11 +25,13 @@ def get_glider_data(project: GliderProject, consumption: dict[str, MaterialUsage
     linesheet2[0, 0] = "Name"
     linesheet2[0, 1] = "Linetype"
     linesheet2[0, 2] = "Color"
-    linesheet2[0, 3] = "Length"
-    linesheet2[0, 4] = "Seam Correction"
-    linesheet2[0, 5] = "Loop Correction"
-    linesheet2[0, 6] = "Knot Correction"
-    linesheet2[0, 7] = "Manual Correction"
+    linesheet2[0, 3] = "Raw length"
+    linesheet2[0, 4] = "Local Checking Length"
+    linesheet2[0, 5] = "Seam Correction"
+    linesheet2[0, 6] = "Loop Correction"
+    linesheet2[0, 7] = "Knot Correction"
+    linesheet2[0, 8] = "Manual Correction"
+    linesheet2[0, 9] = "Cutting Length"
 
     lines = glider.lineset.sort_lines(by_names=True)
     for i, line in enumerate(lines):
@@ -38,14 +40,15 @@ def get_glider_data(project: GliderProject, consumption: dict[str, MaterialUsage
         linesheet2[i+2, 0] = line.name
         linesheet2[i+2, 1] = f"{line.line_type}"
         linesheet2[i+2, 2] = line.color
-        linesheet2[i+2, 3] = round(line_length.get_length() * 1000)
-        linesheet2[i+2, 4] = round(line_length.seam_correction * 1000)
-        linesheet2[i+2, 5] = round(line_length.loop_correction * 1000)
-        linesheet2[i+2, 6] = round(line_length.knot_correction * 1000)
-        linesheet2[i+2, 7] = round(line_length.manual_correction * 1000)
-    #linesheet2 = glider.lineset.get_table_2()
-
-    # linesheet = glider.lineset.get_table_2()
+        linesheet2[i+2, 3] = round(line_length.get_checklength() * 1000)
+        linesheet2[i+2, 4] = round(line_length.get_length() * 1000)
+        linesheet2[i+2, 5] = round(line_length.seam_correction * 1000)
+        linesheet2[i+2, 6] = round(line_length.loop_correction * 1000)
+        linesheet2[i+2, 7] = round(line_length.knot_correction * 1000)
+        linesheet2[i+2, 8] = round(line_length.manual_correction * 1000)
+        linesheet2[i+2, 9] = round(line_length.get_cutting_length() * 1000)
+    
+    checksheet = glider.lineset.get_checksheet()
     rigidfoils = get_rigidfoils(glider)
     straps = get_straps(glider)
     material_sheets = get_material_sheets(glider)
@@ -95,6 +98,7 @@ def get_glider_data(project: GliderProject, consumption: dict[str, MaterialUsage
         specsheet,
         linesheet,
         linesheet2,
+        checksheet,
         rigidfoils,
         straps,
         consumption_table

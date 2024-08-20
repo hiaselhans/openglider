@@ -1,10 +1,10 @@
 #!/bin/env python
 import os
-import signal
 import sys
 
 os.environ["FORCE_QT_API"] = "pyside6"
 os.environ["QT_API"] = "pyside6"
+os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 
 def start_main_window() -> None:

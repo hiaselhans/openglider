@@ -222,7 +222,7 @@ class ParametricGlider:
                 strap.name = "c{}{}{}".format(cell_no+1, "d", strap_no)
 
             cell.straps = self.tables.straps.get(row_no=cell_no, resolvers=resolvers)
-            cell.straps.sort(key=lambda strap: strap.get_average_x())
+            cell.straps.sort(key=lambda strap: (strap.is_lower, strap.get_average_x()))
 
             for strap_no, strap in enumerate(cell.diagonals):
                 strap.name = "c{}{}{}".format(cell_no+1, "s", strap_no)
