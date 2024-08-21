@@ -233,7 +233,7 @@ class PlotMaker:
             Layout.stack_column(c[0], self.config.patterns_align_dist_y) for c in self.straps.values()
         ], distance=self.config.patterns_align_dist_x)
         straps_lower = Layout.stack_row([
-            Layout.stack_column(c[1], self.config.patterns_align_dist_y) for c in list(self.straps.values())
+            Layout.stack_column(c[1][::-1], self.config.patterns_align_dist_y) for c in list(self.straps.values())[::-1]
         ], distance=self.config.patterns_align_dist_x)
         straps = straps_upper.append_left(straps_lower, distance=self.config.patterns_align_dist_x)
         rigidfoils = stack_grid(self.rigidfoils)

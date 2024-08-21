@@ -105,12 +105,12 @@ def get_diagonals_table(diagonals: list[Any]) -> DiagonalTable:
             for cell_no in cells:
                 # center_left, center_right, width_left, width_right, height_left, height_right
 
-                diagonal_table[cell_no+1, 0] = _diagonal.left.center
-                diagonal_table[cell_no+1, 1] = _diagonal.right.center
-                diagonal_table[cell_no+1, 2] = _diagonal.left.width
-                diagonal_table[cell_no+1, 3] = _diagonal.right.width
-                diagonal_table[cell_no+1, 4] = _diagonal.left.height
-                diagonal_table[cell_no+1, 5] = _diagonal.right.height
+                diagonal_table[cell_no+1, 0] = _diagonal.side1.center
+                diagonal_table[cell_no+1, 1] = _diagonal.side2.center
+                diagonal_table[cell_no+1, 2] = _diagonal.side1.width
+                diagonal_table[cell_no+1, 3] = _diagonal.side2.width
+                diagonal_table[cell_no+1, 4] = _diagonal.side1.height
+                diagonal_table[cell_no+1, 5] = _diagonal.side2.height
 
         table.append_right(diagonal_table)
 

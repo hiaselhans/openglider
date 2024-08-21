@@ -5,7 +5,6 @@ from openglider.glider.rib.rib import Rib
 from openglider.plots import cuts, marks
 from openglider.utils.config import Config
 from openglider.utils.distribution import Distribution
-from openglider.vector.unit import Length
 
 
 class PatternConfigOld(Config):
@@ -29,6 +28,7 @@ class PatternConfigOld(Config):
 
     insert_design_cuts = False
 
+    diagonal_endmark_min_length = 0.1
     marks_diagonal_front: marks.Mark = marks.Combine(marks.Inside(marks.Arrow(left=True, name="diagonal_front")), marks.Dot(0.2, 0.8))
     marks_diagonal_back: marks.Mark = marks.Combine(marks.Inside(marks.Arrow(left=False, name="diagonal_back")), marks.Dot(0.2, 0.8))
     marks_diagonal_center: marks.Mark = marks.Combine(marks.Rotate(marks.Arrow(), -math.pi/2), marks.Dot(0.2, 0.8))

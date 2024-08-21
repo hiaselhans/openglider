@@ -3,7 +3,6 @@ import logging
 import euklid
 import string
 import subprocess
-from asyncio.log import logger
 from typing import Any
 from pathlib import Path
 
@@ -181,7 +180,7 @@ class Patterns(PatternsNew):
 
     @staticmethod
     def set_names_straps(glider: Glider) -> None:
-        logger.warn(f"rename")
+        logger.warn("rename")
         curves = glider.get_attachment_point_layers()
 
         for cell_no, cell in enumerate(glider.cells):
@@ -210,13 +209,13 @@ class Patterns(PatternsNew):
             straps = cell.straps[:]
             straps.sort(key=lambda strap: strap.get_average_x())
             for strap in straps:
-                strap.name = f"{cell_no+1}{get_name(strap.left, cell.rib1)}"
+                strap.name = f"{cell_no+1}{get_name(strap.side1, cell.rib1)}"
 
             layers_between = {}
             diagonals = cell.diagonals[:]
             diagonals.sort(key=lambda diagonal: diagonal.get_average_x())
             for diagonal in diagonals:
-                if diagonal.left.height < 0:
-                    diagonal.name = f"D{cell_no+1}{get_name(diagonal.left, cell.rib1)}"
+                if diagonal.side1.height < 0:
+                    diagonal.name = f"D{cell_no+1}{get_name(diagonal.side1, cell.rib1)}"
                 else:
-                    diagonal.name = f"D{cell_no+1}{get_name(diagonal.right, cell.rib2)}"
+                    diagonal.name = f"D{cell_no+1}{get_name(diagonal.side2, cell.rib2)}"

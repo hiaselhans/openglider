@@ -10,15 +10,18 @@ def point2d(p1_3d: V3, p1_2d: V2, p2_3d: V3, p2_2d: V2, point_3d: V3) -> V2:
     diff_2d = (p2_2d - p1_2d).normalized()
 
     diff_point = point_3d-p1_3d
-    point_2d = p1_2d + diff_2d * diff_3d.dot(diff_point)
 
-    # length-wise
-    diff_3d = (diff_point - diff_3d * diff_3d.dot(diff_point)).normalized()
+    # add x
+    x = diff_3d.dot(diff_point)
+    point_2d = p1_2d + diff_2d * x
+
+    # add y
+    y = (diff_point - diff_3d * x).length()
 
     #diff_2d = diff_2d.dot([[0, 1], [-1, 0]])  # Rotate 90deg
-    diff_2d = euklid.vector.Vector2D([-diff_2d[1], diff_2d[0]])
+    dy_2d = euklid.vector.Vector2D([-diff_2d[1], diff_2d[0]])
 
-    return point_2d + diff_2d * diff_3d.dot(diff_point)
+    return point_2d + dy_2d * y
 
 
 def flatten_list(
@@ -69,4 +72,11 @@ def flatten_list(
     #                               list2[index_right + 1]))
     #     index_right += 1
 
-    return euklid.vector.PolyLine2D(flat_1), euklid.vector.PolyLine2D(flat_2)
+    curve1 = euklid.vector.PolyLine2D(flat_1)
+    curve2 = euklid.vector.PolyLine2D(flat_2)
+    if not to_right:
+        x0 = euklid.vector.Vector2D([0,0])
+        x1 = euklid.vector.Vector2D([0,1])
+        return curve1.mirror(x0, x1), curve2.mirror(x0, x1)
+    
+    return curve1, curve2

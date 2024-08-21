@@ -266,11 +266,11 @@ class RibPlot:
 
             if cell.rib1 == self.rib:
                 for diagonal in cell.diagonals + cell.straps:
-                    self.insert_drib_mark(diagonal.left)
+                    self.insert_drib_mark(diagonal.side1)
 
             elif cell.rib2 == self.rib:
                 for diagonal in cell.diagonals + cell.straps:  # type: ignore
-                    self.insert_drib_mark(diagonal.right)
+                    self.insert_drib_mark(diagonal.side2)
 
         for cut, is_entry in self.get_panel_cuts(glider):
             if -0.99 < cut.si and cut.si < 0.99:
@@ -359,8 +359,8 @@ class RibPlot:
             self.insert_mark(side.start_x, self.config.marks_diagonal_front)
             self.insert_mark(side.end_x, self.config.marks_diagonal_back)
         elif side.is_upper:
-            self.insert_mark(-side.start_x(self.rib), self.config.marks_diagonal_back)
-            self.insert_mark(-side.end_x(self.rib), self.config.marks_diagonal_front)
+            self.insert_mark(side.start_x(self.rib), self.config.marks_diagonal_back)
+            self.insert_mark(side.end_x(self.rib), self.config.marks_diagonal_front)
         else:
             p1 = self.get_point(side.start_x(self.rib), side.height)
             p2 = self.get_point(side.end_x(self.rib), side.height)

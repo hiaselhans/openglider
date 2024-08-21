@@ -15,8 +15,8 @@ def get_length_table(glider: Glider) -> Table:
         table[row, 0] = f"cell_{cell.name}"
         for strap in sorted(cell.straps, key=lambda strap: abs(strap.get_average_x())):
             table[row, 1] = strap.name
-            table[row, 2] = f"{abs(strap.left.center.si*100):.0f}%"
-            table[row, 3] = f"{abs(strap.right.center.si*100):.0f}%"
+            table[row, 2] = f"{abs(strap.side1.center.si*100):.0f}%"
+            table[row, 3] = f"{abs(strap.side2.center.si*100):.0f}%"
             table[row, 4] = "upper" if strap.get_average_x() < 0 else "lower"
             table[row, 5] = f"{strap.get_center_length(cell)*1000:.0f}mm"
             

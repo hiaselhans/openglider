@@ -18,7 +18,7 @@ class QRDTO(DTO):
         left_side = DiagonalSide(center=self.position.first, width=self.width.first, height=self.height.first.si)
         right_side = DiagonalSide(center=self.position.second, width=self.width.second, height=self.height.second.si)
 
-        return DiagonalRib(left=left_side, right=right_side)
+        return DiagonalRib(side1=left_side, side2=right_side)
     
 class DiagonalDTO(QRDTO):
     material_code: str
@@ -84,8 +84,8 @@ class FingerDiagonal(DTO):
             if self.direction_up:
                 ribs.append(
                     DiagonalRib(
-                        left=lower_side,
-                        right=upper,
+                        side1=lower_side,
+                        side2=upper,
                         material_code=self.material_code,
                         num_folds=0,
                         curve_factor=self.curve_factor
@@ -94,8 +94,8 @@ class FingerDiagonal(DTO):
             else:
                 ribs.append(
                     DiagonalRib(
-                        left=upper,
-                        right=lower_side,
+                        side1=upper,
+                        side2=lower_side,
                         material_code=self.material_code,
                         num_folds=0,
                         curve_factor=self.curve_factor
@@ -109,7 +109,12 @@ class StrapDTO(DTO):
     width: Percentage | Length
 
     def get_object(self) -> TensionStrap:
-        return TensionStrap(self.position.first, self.position.second, self.width)
+        height = -1
+        if (self.position.first + self.position.second).si < 0:
+            self.position.first = -self.position.first
+            self.position.second = -self.position.second
+            height = 1
+        return TensionStrap(self.position.first, self.position.second, self.width, height)
     
 class Strap3DTO(StrapDTO):
     num_folds: int
@@ -117,6 +122,15 @@ class Strap3DTO(StrapDTO):
     def get_object(self) -> TensionStrap:
         result = super().get_object()
         result.num_folds = self.num_folds
+
+        return result
+
+class Strap4DTO(Strap3DTO):
+    material_code: str
+
+    def get_object(self) -> TensionStrap:
+        result = super().get_object()
+        result.material_code = self.material_code
 
         return result
 
@@ -162,6 +176,7 @@ class StrapTable(CellTable):
     dtos = {
         "STRAP": StrapDTO,
         "STRAP3": Strap3DTO,
+        "STRAP4": Strap4DTO,
         "VEKTLAENGE": TensionLineDTO,
         "CurvedStrap": CurvedStrap
     }

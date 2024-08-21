@@ -320,35 +320,29 @@ class PanelPlot:
 
 
     def _insert_diagonals(self, plotpart: PlotPart) -> None:
-
-
         for strap in self.cell.straps + self.cell.diagonals:
-            is_upper = strap.left.is_upper and strap.right.is_upper
-            is_lower = strap.left.is_lower and strap.right.is_lower
+            is_upper = strap.is_upper
+            is_lower = strap.is_lower
 
             if is_upper or is_lower:
-                factor = 1
-                if is_upper:
-                    factor = -1
-
-                self.insert_mark(self.config.marks_diagonal_center, factor * strap.left.center, plotpart, False)
-                self.insert_mark(self.config.marks_diagonal_center, factor * strap.right.center, plotpart, True)
+                self.insert_mark(self.config.marks_diagonal_center, strap.side1.center_x(), plotpart, False)
+                self.insert_mark(self.config.marks_diagonal_center, strap.side2.center_x(), plotpart, True)
 
                 # more than 25cm? -> add start / end marks too
-                if strap.left.get_curve(self.cell.rib1).get_length() > 0.25:
-                    self.insert_mark(self.config.marks_diagonal_front, factor * strap.left.start_x(self.cell.rib1), plotpart, False)
-                    self.insert_mark(self.config.marks_diagonal_back, factor * strap.left.end_x(self.cell.rib1), plotpart, False)
+                if strap.side1.get_curve(self.cell.rib1).get_length() > self.config.diagonal_endmark_min_length:
+                    self.insert_mark(self.config.marks_diagonal_front, strap.side1.start_x(self.cell.rib1), plotpart, False)
+                    self.insert_mark(self.config.marks_diagonal_back, strap.side1.end_x(self.cell.rib1), plotpart, False)
 
-                if strap.right.get_curve(self.cell.rib1).get_length() > 0.25:
-                    self.insert_mark(self.config.marks_diagonal_back, factor * strap.right.start_x(self.cell.rib2), plotpart, True)
-                    self.insert_mark(self.config.marks_diagonal_front, factor * strap.right.end_x(self.cell.rib2), plotpart, True)
+                if strap.side2.get_curve(self.cell.rib2).get_length() > self.config.diagonal_endmark_min_length:
+                    self.insert_mark(self.config.marks_diagonal_back, strap.side2.start_x(self.cell.rib2), plotpart, True)
+                    self.insert_mark(self.config.marks_diagonal_front, strap.side2.end_x(self.cell.rib2), plotpart, True)
 
             else:
-                if strap.left.is_lower:
-                    self.insert_mark(self.config.marks_diagonal_center, strap.left.center, plotpart, False)
+                if strap.side1.is_lower:
+                    self.insert_mark(self.config.marks_diagonal_center, strap.side1.center, plotpart, False)
                 
-                if strap.right.is_lower:
-                    self.insert_mark(self.config.marks_diagonal_center, strap.right.center, plotpart, True)
+                if strap.side2.is_lower:
+                    self.insert_mark(self.config.marks_diagonal_center, strap.side2.center, plotpart, True)
 
     def _insert_attachment_points(self, plotpart: PlotPart, insert_left: bool=True, insert_right: bool=True) -> None:
         def insert_side_mark(name: str, positions: list[float], is_right: bool) -> None:
@@ -627,16 +621,21 @@ class CellPlotMaker:
 
         return dribs
 
-    def get_straps(self) -> list[PlotPart]:
+    def get_straps(self) -> tuple[list[PlotPart], list[PlotPart]]:
         straps = self.cell.straps[:]
-        straps.sort(key=lambda d: d.name)
-        result = []
+        straps.sort(key=lambda d: (d.is_upper, d.get_average_x().si))
+        upper = []
+        lower = []
         for strap in straps:
             plot = self.StrapPlot(strap, self.cell, self.config)
-            result.append(plot.flatten())
+            dwg = plot.flatten()
+            if strap.is_upper:
+                upper.append(dwg)
+            else:
+                lower.append(dwg)
             self.consumption_straps += plot.get_material_usage()
-        
-        return result
+
+        return upper, lower
     
     def get_rigidfoils(self) -> list[PlotPart]:
         rigidfoils = []
