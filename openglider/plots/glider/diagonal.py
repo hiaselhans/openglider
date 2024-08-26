@@ -10,6 +10,7 @@ from openglider.materials import cloth
 from openglider.utils.config import Config
 from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
+from openglider.vector.unit import Length
 
 
 logger = logging.getLogger(__name__)
@@ -132,10 +133,10 @@ class DribPlot:
 
         # put center marks only on lower sides of diagonal ribs, always on straight ones
         if self.drib.side1.is_lower or self.drib.is_upper:
-            insert_center_mark(self.inner_1, self.outer_2)
+            insert_center_mark(self.inner_1, self.outer_1)
 
         if self.drib.side2.is_lower or self.drib.is_upper:
-            insert_center_mark(self.inner_2, self.outer_1)
+            insert_center_mark(self.inner_2, self.outer_2)
     
     def _insert_controlpoints(self, plotpart: PlotPart) -> None:
         x: float
@@ -168,41 +169,41 @@ class DribPlot:
                 p1, p2 = self.get_left(attachment_point.rib_pos.si)
             except ValueError:
                 continue
-            _add_mark(attachment_point.name, p1, p2, True)
+            _add_mark(attachment_point.name, p1, p2, not self.drib.is_lower)
 
         for attachment_point in self.cell.rib2.attachment_points:
             try:
                 p1, p2 = self.get_right(attachment_point.rib_pos.si)
             except ValueError:
                 continue
-            _add_mark(attachment_point.name, p1, p2, False)
+            _add_mark(attachment_point.name, p1, p2, self.drib.is_lower)
 
-    def _insert_text(self, plotpart: PlotPart, reverse: bool=False) -> None:
-        if reverse:
-            node_index = -1
+    def _insert_text(self, plotpart: PlotPart) -> None:
+        if self.drib.is_lower:
+            front = self.front or euklid.vector.PolyLine2D([self.inner_1.nodes[0], self.inner_2.nodes[0]])
         else:
-            node_index = 0
-        # text_p1 = left_out[0] + self.config.drib_text_position * (right_out[0] - left_out[0])
-        val_valign = 0.6
-        if self.drib.num_folds == 0:
-            val_valign = -1
+            front = self.back or euklid.vector.PolyLine2D([self.inner_1.nodes[-1], self.inner_2.nodes[-1]])
+            front = front.reverse()
+        
+        font_size = Length("6mm")
+        front_length = front.get_length()
 
-        if self.front is not None:
-            front_curve = euklid.vector.PolyLine2D([self.inner_1.nodes[0]] + self.front.nodes + [self.inner_2.nodes[0]])
-            ik0 = front_curve.walk(0, 0.01)
-            ik1 = front_curve.walk(ik0, self.cell.rib1.seam_allowance.si * 0.6 * len(self.drib.name))
-            p0 = front_curve.get(ik0)
-            p1 = front_curve.get(ik1)
-        else:
-            p0 = self.inner_1.nodes[node_index]
-            p1 = self.inner_2.nodes[node_index]
+        def add_text(x: float, text: str):
+            text_width = font_size.si * len(text)
+            if not self.drib.is_lower:
+                x = 1.-x
+            ik1 = front.walk(0, x*front_length + text_width/2)
+            ik2 = front.walk(ik1, -text_width)
+            
+            p1 = front.get(ik1)
+            p2 = front.get(ik2)
 
-        plotpart.layers["text"] += Text(f" {self.drib.name} ",
-                                        p0,
-                                        p1,
-                                        size=self.drib.fold_allowance * 0.6,
-                                        height=0.6,
-                                        valign=val_valign).get_vectors()
+            _text = Text(text, p1, p2, size=font_size, align="center", valign=1 if self.drib.num_folds > 0 else -1)
+
+            plotpart.layers["cuts"] += _text.get_vectors()
+
+        add_text(0.1, self.drib.name)
+        add_text(0.9, self.cell.rib2.name)
 
     def flatten(self) -> PlotPart:
         return self._flatten(self.drib.num_folds)

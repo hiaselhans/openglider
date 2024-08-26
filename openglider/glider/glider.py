@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 
 class Glider:
-    cell_naming_scheme = "c{cell_no}"
-    rib_naming_scheme = "p{rib_no}"
+    cell_naming_scheme = "{cell_no}"
+    rib_naming_scheme = "{rib_no}"
 
     cells: list[Cell]
     lineset: LineSet
@@ -92,8 +92,12 @@ class Glider:
 
     def rename_parts(self) -> None:
         for rib_no, rib in enumerate(self.ribs):
-            k = not self.has_center_cell
-            rib.name = self.rib_naming_scheme.format(rib=rib, rib_no=rib_no+k)
+            if not self.has_center_cell:
+                rib_no += 1
+            else:
+                rib_no = max(1, rib_no)
+
+            rib.name = self.rib_naming_scheme.format(rib=rib, rib_no=rib_no)
             rib.rename_parts()
 
         for cell_no, cell in enumerate(self.cells):

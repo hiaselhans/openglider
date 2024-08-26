@@ -279,7 +279,7 @@ class RibPlot:
                 elif self.config.insert_design_cuts:
                     self.insert_mark(cut, self.config.marks_panel_cut)
 
-        self._insert_text(self.rib.name)
+        self._insert_text()
         self.insert_controlpoints()
 
         # insert cut
@@ -494,7 +494,8 @@ class RibPlot:
             for position in positions:
                 self.insert_mark(position, self.config.marks_attachment_point)
 
-    def _insert_text(self, text: str) -> None:
+    def _insert_text(self) -> None:
+        text = f"p{self.rib.name}"
         if self.config.rib_text_in_seam:
             inner, outer = self._get_inner_outer(self.config.rib_text_pos)
             diff = outer - inner

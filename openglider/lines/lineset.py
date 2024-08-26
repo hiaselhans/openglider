@@ -516,7 +516,9 @@ class LineSet:
     def total_length(self) -> float:
         length = 0.
         for line in self.lines:
-            length += line.get_stretched_length() + line.trim_correction.si
+            length += line.get_stretched_length()
+            if line.trim_correction is not None:
+                length += line.trim_correction.si
         return length
     
     def get_consumption(self) -> dict[LineType, float]:
@@ -687,13 +689,16 @@ class LineSet:
 
             knot_correction = self.knot_corrections.get(lower_line.line_type, line.line_type, total_lines)[line_no]
 
+        trim_correction = 0.
+        if line.trim_correction is not None:
+            trim_correction = line.trim_correction.si
 
         return LineLength(
             line.get_stretched_length(sag=with_sag, pre_load=pre_load),
             line.line_type.seam_correction,
             loop_correction,
             knot_correction,
-            line.trim_correction.si
+            trim_correction
         )
     
     def get_checklength(self, node: Node, with_sag: bool=True, pre_load: float = 50) -> float:
@@ -782,8 +787,34 @@ class LineSet:
 
 
     def get_table_2(self) -> Table:
-        table = self._get_lines_table(lambda line: [line.name, f"{line.line_type.name} ({line.color})", f"{line.get_stretched_length()*1000:.0f}"])
-        table.name = "lines_2"
+        table = Table(name="lines_table")
+
+        table[0, 0] = "Name"
+        table[0, 1] = "Linetype"
+        table[0, 2] = "Color"
+        table[0, 3] = "Raw length"
+        table[0, 4] = "Local Checking Length"
+        table[0, 5] = "Seam Correction"
+        table[0, 6] = "Loop Correction"
+        table[0, 7] = "Knot Correction"
+        table[0, 8] = "Manual Correction"
+        table[0, 9] = "Cutting Length"
+
+        lines = self.sort_lines(by_names=True)
+        for i, line in enumerate(lines):
+            line_length = self.get_line_length(line)
+
+            table[i+2, 0] = line.name
+            table[i+2, 1] = f"{line.line_type}"
+            table[i+2, 2] = line.color
+            table[i+2, 3] = round(line_length.get_checklength() * 1000)
+            table[i+2, 4] = round(line_length.get_length() * 1000)
+            table[i+2, 5] = round(line_length.seam_correction * 1000)
+            table[i+2, 6] = round(line_length.loop_correction * 1000)
+            table[i+2, 7] = round(line_length.knot_correction * 1000)
+            table[i+2, 8] = round(line_length.manual_correction * 1000)
+            table[i+2, 9] = round(line_length.get_cutting_length() * 1000)
+        
         return table
 
     def get_table_sorted_lengths(self) -> Table:

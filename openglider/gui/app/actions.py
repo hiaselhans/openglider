@@ -10,7 +10,7 @@ __all__ = ["menu_actions"]
 
 menu_actions: dict[str, list[tuple[type[Wizard], str]]] = {
     "view": [
-        (LineForceView, "Leinen")
+        (LineForceView, "Lines")
     ],
     "edit": input_wizzards
 }

@@ -144,15 +144,19 @@ class GliderProject:
         return data
 
 
-    def save(self, filename: str) -> None:
+    def save(self, filename: str, keep_filename: bool=False) -> None:
         if filename.endswith(".ods"):
             export_ods_project(self, filename)
         elif filename.endswith(".json"):
             openglider.save(self, filename)
+        elif filename.endswith(".og.md"):
+            with open(filename, "w") as outfile:
+                outfile.write(self.as_markdown())
         else:
             raise ValueError(f"Invalid Extension ({filename})")
         
-        self.filename = filename
+        if not self.filename or not keep_filename:
+            self.filename = filename
 
     def copy(self) -> GliderProject:
         new_glider = self.glider.copy()

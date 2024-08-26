@@ -34,7 +34,7 @@ class Line(BaseModel):
     name: str = ""
 
     force: float | None = None
-    trim_correction: Length = Length(0.)
+    trim_correction: Length | None = None
     init_length: Length | None = None
 
     # sag angle

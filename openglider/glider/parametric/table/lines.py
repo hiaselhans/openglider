@@ -65,12 +65,7 @@ class LineSetTable(BaseModel):
                     # We have a line
                     line_type_name = str(self.table[row, column + 1])
 
-                    if match := isinstance(value, str) and re.match(r"(.*)([+-].*)", value):
-                        name_or_length = match.group(1)
-                        trim_correction = Length(match.group(2))
-                    else:
-                        name_or_length = value
-                        trim_correction = Length(0.)
+                    name_or_length, trim_correction = self.parse_correction(value)
 
                     if not len(current_nodes) > line_level:
                         raise ValueError()
@@ -109,6 +104,18 @@ class LineSetTable(BaseModel):
                     ))
 
         return LineSet(lines, v_inf=v_inf)
+    
+    @staticmethod
+    def parse_correction(value: str) -> tuple[str, Length | None]:
+        trim_correction: Length | None = None
+        name_or_length = value
+
+        if match := isinstance(value, str) and re.match(r"(.*)([+-].*)", value):
+            name_or_length = match.group(1)
+            trim_correction = Length(match.group(2))
+
+        return name_or_length, trim_correction
+
     
     @classmethod
     def from_lineset(cls, lineset: LineSet) -> Self:
@@ -159,8 +166,11 @@ class LineSetTable(BaseModel):
             column = 1
             while column < self.table.num_columns:
                 if column + 2 < self.table.num_columns and self.table[row, column+2] and self.table[row, column]:
-                    original_length = self.table[row, column]
+                    _original_length, trim_correction = self.parse_correction(self.table[row, column])
+                    original_length = Length(_original_length)
                     scaled_length = original_length * factor
+                    if trim_correction is not None:
+                        trim_correction *= factor
 
                     if column == 1 and not scale_lower_floor:
                         # riser offset

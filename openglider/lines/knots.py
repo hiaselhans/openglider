@@ -86,17 +86,16 @@ class KnotCorrections:
             
         base_amount = (d1_base + num * d1_num) * d1 * d1_sheet + (d2_base + num * d2_num) * d2 * d2_sheet
         return (
-            base_amount,
-            base_amount + count_factor * (num-1)
+            base_amount * 1000,
+            (base_amount + count_factor * (num-1)) * 1000
         )
-    
     
     def get(self, lower_type: LineType, upper_type: LineType, upper_num: int) -> list[float]:
         key = self._knot_key(lower_type, upper_type, upper_num)
 
         if key not in self.knots_dict:
-            logger.warning(f"no shortening values for {lower_type} and {upper_type} with {upper_num} top lines")
             first, last = self.predict(lower_type, upper_type, upper_num)
+            logger.warning(f"no shortening values for {lower_type} and {upper_type} with {upper_num} top lines. predicted: {first:.1f} -> {last:.1f}")
         else:
             try:
                 first = self.knots_dict[key][0]
@@ -107,5 +106,7 @@ class KnotCorrections:
         if upper_num == 1:
             return [first]
 
-        return [(first + index * (last-first) / (upper_num-1)) * 0.001 for index in range(upper_num)]
+        values = [(first + index * (last-first) / (upper_num-1)) * 0.001 for index in range(upper_num)]
+        x=1
+        return values
 

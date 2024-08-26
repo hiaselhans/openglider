@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import pathlib
+import subprocess
+import tempfile
 from typing import TYPE_CHECKING, Any
 from collections.abc import Callable, Iterator
 import qtawesome
@@ -87,39 +90,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
         
-        menubar: QtWidgets.QMenuBar = self.menuBar()
 
-        self.menus = {
-            "file": menubar.addMenu("&File")
-        }
-        self.menu_actions = self._get_actions()
+        self.menus = {}
+        self.add_menu()
 
-        for menu_name in self.menu_actions:
-            self.menus[menu_name] = menubar.addMenu(f"&{menu_name}")
-
-        self.menus["debug"] = menubar.addMenu(f"&Debug")
-        reload_action = QAction(qtawesome.icon("fa.minus"), "Reload", self)
-        reload_action.triggered.connect(self.app.reload_code)
-        self.menus["debug"].addAction(reload_action)
-
-        toggle_console = QAction(qtawesome.icon("mdi6.file-document-outline"), "Toggle Console", self)
-        toggle_console.setShortcut("del")  #QtGui.QKeySequence(QtCore.Qt.Key_AsciiCircum)
-        #toggle_console.setStatusTip("Toggle Console")
-        toggle_console.triggered.connect(self.toggle_console)
-        menubar.addAction(toggle_console)
-
-        load_glider = QAction(qtawesome.icon("fa.folder"), "Open", self)
-        load_glider.setShortcut("Ctrl+O")
-        load_glider.setStatusTip("Load Glider")
-        load_glider.triggered.connect(self.open_dialog)
-
-        load_demokite = QAction(qtawesome.icon("fa.folder"), "Demokite", self)
-        load_demokite.setShortcut("Ctrl+D")
-        load_demokite.setStatusTip("Load Demokite")
-        load_demokite.triggered.connect(self.load_demokite)
-
-        self.menus["file"].addAction(load_glider)
-        self.menus["file"].addAction(load_demokite)
 
         #self.glider_list = ListWidget(self, self.state.projects)
         self.glider_list = GliderListWidget(self, self.state.projects)
@@ -151,11 +125,76 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.signal_handler = ConsoleHandler(self.console)
 
-        self.add_actions()
-
         self.setAcceptDrops(True)
         self.current_glider_changed()
 
+    def add_menu(self):
+        menubar: QtWidgets.QMenuBar = self.menuBar()
+        self.menus = {
+            "file": menubar.addMenu("&File")
+        }
+        self.menu_actions = self._get_actions()
+
+        for menu_name in self.menu_actions:
+            self.menus[menu_name] = menubar.addMenu(f"&{menu_name}")
+
+        self.menus["debug"] = menubar.addMenu(f"&Debug")
+        reload_action = QAction(qtawesome.icon("fa.minus"), "Reload", self)
+        reload_action.triggered.connect(self.app.reload_code)
+        self.menus["debug"].addAction(reload_action)
+
+        toggle_console = QAction(qtawesome.icon("mdi6.file-document-outline"), "Toggle Console", self)
+        toggle_console.setShortcut("del")  #QtGui.QKeySequence(QtCore.Qt.Key_AsciiCircum)
+        #toggle_console.setStatusTip("Toggle Console")
+        toggle_console.triggered.connect(self.toggle_console)
+        menubar.addAction(toggle_console)
+
+        load_glider = QAction(qtawesome.icon("fa.folder"), "Open", self)
+        load_glider.setShortcut("Ctrl+O")
+        load_glider.setStatusTip("Load Glider")
+        load_glider.triggered.connect(self.open_dialog)
+
+        load_demokite = QAction(qtawesome.icon("fa.folder"), "Demokite", self)
+        load_demokite.setShortcut("Ctrl+D")
+        load_demokite.setStatusTip("Load Demokite")
+        load_demokite.triggered.connect(self.load_demokite)
+
+        diff_gliders = QAction(qtawesome.icon("fa.folder"), "Diff gliders", self)
+        diff_gliders.setStatusTip("Diff gliders")
+        diff_gliders.triggered.connect(self.diff)
+
+        self.menus["file"].addAction(load_glider)
+        self.menus["file"].addAction(load_demokite)
+
+        for menu_name, actions in self.menu_actions.items():
+            for widget, name in actions:
+                action = Action(self, name, widget)
+                qt_action = action.get_qt_action()
+
+                self.menus[menu_name].addAction(qt_action)
+                self.action_store[name] = action
+
+        self.menus["view"].addAction(diff_gliders)
+
+    def diff(self):
+        active_gliders = self.state.projects.get_active()
+        if len(active_gliders) != 2:
+            raise ValueError("Need ti have two gliders selected")
+        
+        g1, g2 = active_gliders
+        tempdir = pathlib.Path(tempfile.gettempdir())
+        tmpname1 = str(tempdir / f"{g1.name}.og.md")
+        tmpname2 = str(tempdir / f"{g2.name}.og.md")
+        
+        g1.save(tmpname1, keep_filename=True)
+        g2.save(tmpname2, keep_filename=True)
+
+        subprocess.run([
+            "code",
+            "--diff",
+            tmpname1,
+            tmpname2
+        ])
 
     def _get_actions(self) -> dict[str, list[tuple[type[Wizard], str]]]:
         from openglider.gui.app.actions import menu_actions
@@ -200,15 +239,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         for name, menu in self.menus.items():
             menu.setEnabled(num_gliders > 0)
-
-    def add_actions(self) -> None:
-        for menu_name, actions in self.menu_actions.items():
-            for widget, name in actions:
-                action = Action(self, name, widget)
-                qt_action = action.get_qt_action()
-
-                self.menus[menu_name].addAction(qt_action)
-                self.action_store[name] = action
     
     @property
     def loop(self) -> QtCore.QEventLoop:
