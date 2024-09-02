@@ -240,7 +240,7 @@ class Rib(RibBase):
             points = self.align_all(euklid.vector.PolyLine2D(mesh.points))
             boundaries = {self.name: list(range(len(mesh.points)))}
 
-            rib_mesh = Mesh.from_indexed(points.nodes, polygons={"ribs": [(tri, {}) for tri in mesh.elements]} , boundaries=boundaries)
+            rib_mesh = Mesh.from_indexed(points.nodes, polygons={self.name: [(tri, {}) for tri in mesh.elements]} , boundaries=boundaries)
             
             for hole in self.holes:
                 if hole_mesh := hole.get_mesh(self):
