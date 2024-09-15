@@ -125,8 +125,12 @@ class GliderTables:
         tables = []
 
         for name in self.__annotations__.keys():
-            table = getattr(self, name).table
-            table.name = name
+            parametric_table = getattr(self, name)
+            table = parametric_table.table
+            if table_name := getattr(parametric_table, 'table_name', None):
+                table.name = table_name
+            else:
+                table.name = name
             
             tables.append(table)
         

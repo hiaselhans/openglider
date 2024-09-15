@@ -73,7 +73,7 @@ class Glider:
             if line.upper_node.name in attachment_points:
                 line.upper_node = attachment_points[line.upper_node.name]
         
-        glider.lineset.recalc(calculate_sag= True, glider=glider)
+        glider.lineset.recalc(glider=glider)
 
         return glider
 

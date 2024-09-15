@@ -65,7 +65,7 @@ class LineSet:
     """
     Set of different lines
     """
-    calculate_sag = True
+    calculate_sag: bool = True
     knot_corrections = KnotCorrections.read_csv(os.path.join(os.path.dirname(__file__), "knots.csv"))
     mat: SagMatrix
 
@@ -262,7 +262,7 @@ class LineSet:
             mesh += line.get_mesh(numpoints)
         return mesh
 
-    def recalc(self, calculate_sag: bool=True, glider: Glider | None=None, iterations: int=5) -> LineSet:
+    def recalc(self, glider: Glider | None=None, iterations: int=5) -> LineSet:
         """
         Recalculate Lineset Geometry.
         if LineSet.calculate_sag = True, drag induced sag will be calculated
@@ -279,8 +279,6 @@ class LineSet:
             for rib in glider.ribs:
                 for p in rib.attachment_points:
                     p.get_position(rib)
-
-        self.calculate_sag = calculate_sag
 
         for line in self.lines:
             line.v_inf = self.v_inf
@@ -345,6 +343,7 @@ class LineSet:
             self.mat.insert_type_1_upper(line, up)
         else:
             self.mat.insert_type_2_upper(line)
+
         for u in up:
             self._calc_matrix_entries(u)
 
@@ -707,7 +706,7 @@ class LineSet:
         while lines := self.get_lower_connected_lines(last_node):
             if len(lines) != 1:
                 raise ValueError("more than one line connected!")
-            line_length = self.get_line_length(lines[0], with_sag, pre_load)
+            line_length = self.get_line_length(lines[0], self.calculate_sag, pre_load)
 
             length += line_length.get_checklength()
             

@@ -512,6 +512,7 @@ class ParametricGlider:
         logger.info("create lineset")
         self.tables.lines.lower_attachment_points = self.config.get_lower_attachment_points()
         glider.lineset = self.tables.lines.get_lineset(glider, self.v_inf)
+        glider.lineset.calculate_sag = self.config.use_sag
         glider.lineset.recalc(glider=glider)
         glider.lineset.rename_lines()
 

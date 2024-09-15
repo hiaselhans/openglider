@@ -283,7 +283,7 @@ class LinesetView(MeshView):
     def draw(self, left: bool=True, right: bool=True, line_num: int=4) -> None:
         line_num += 1
 
-        self.lineset.recalc(calculate_sag=True)
+        self.lineset.recalc()
 
         mesh = openglider.mesh.Mesh()
         lineset_mesh = self.lineset.get_mesh(numpoints=line_num)

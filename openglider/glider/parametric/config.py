@@ -118,6 +118,8 @@ class ParametricGliderConfig(ConfigTable):
     use_mean_profile: bool = False
     aoa_offset: Angle | None = None
     last_profile_height: float = 0
+    
+    use_sag: bool = True
 
     version: str = __version__
 
