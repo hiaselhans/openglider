@@ -66,6 +66,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, app: GliderApp):
         super().__init__()
         self.setWindowTitle("Glider Schneider")
+        og_dir = os.path.dirname(openglider.__file__)
+        self.setWindowIcon(QtGui.QIcon(os.path.join(og_dir, "gui/openglider.png")))
         
         self.app = app
         self.state = app.state
