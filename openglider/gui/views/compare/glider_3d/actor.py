@@ -1,9 +1,11 @@
 import logging
+from pathlib import Path
 
 import openglider.mesh
 import openglider.rs
 from openglider.glider.glider import Glider
 from openglider.glider.project import GliderProject
+from openglider.glider.uv_map import SVGTexture, UVMap, UVMapMode
 from openglider.gui.views_3d.widgets import View3D
 from openglider.mesh import Mesh
 from openglider.gui.views.compare.glider_3d.config import GliderViewConfig
@@ -24,6 +26,32 @@ class GliderActors:
         self.glider_3d = None
         self.actors = {}
         self.config = None
+        self.texture_svg_path: str | None = None
+        self.texture_uv_mode: UVMapMode = "stacked"
+        self.texture_precision: float = 0.35
+        self.texture_overlay: bool = False
+        self._panel_texture_key: str | None = None
+        self._cached_svg_texture: SVGTexture | None = None
+        self._cached_svg_texture_path: str | None = None
+        self._cached_uv_map: UVMap | None = None
+
+    def set_panel_texture(
+        self,
+        texture_svg_path: str | None,
+        uv_mode: UVMapMode = "stacked",
+        precision: float | None = None,
+        overlay: bool = False,
+    ) -> None:
+        self.texture_svg_path = texture_svg_path
+        self.texture_uv_mode = uv_mode
+        if precision is not None:
+            self.texture_precision = precision
+        self.texture_overlay = overlay
+
+    def invalidate_texture_cache(self) -> None:
+        self._cached_svg_texture = None
+        self._cached_svg_texture_path = None
+        self._panel_texture_key = None
         
     def get_panels(self, numribs: int):
         if self.glider_3d is None:
@@ -40,6 +68,42 @@ class GliderActors:
                     panel_mesh += mesh_temp.copy().mirror("y")
 
         return openglider.rs.wgpu.MeshActor(panel_mesh, draw_edges=False)
+
+    def get_panels_textured(self, numribs: int):
+        if self._cached_uv_map is None:
+            self._cached_uv_map = UVMap(self.project.glider)
+        uv_map = self._cached_uv_map
+
+        if self.texture_svg_path is None:
+            return self.get_panels(numribs)
+
+        texture_path = Path(self.texture_svg_path)
+        if not texture_path.exists():
+            logger.warning("texture svg does not exist: %s", texture_path)
+            return self.get_panels(numribs)
+
+        # Cache SVGTexture so the SVG is only parsed and rendered once per path change.
+        if self._cached_svg_texture_path != self.texture_svg_path:
+            try:
+                self._cached_svg_texture = SVGTexture(texture_path)
+            except Exception:
+                logger.exception("failed to load SVG texture: %s", texture_path)
+                return self.get_panels(numribs)
+            self._cached_svg_texture_path = self.texture_svg_path
+
+        try:
+            return uv_map.get_textured_panels_actor(
+                texture=self._cached_svg_texture,
+                numribs=numribs,
+                mode=self.texture_uv_mode,
+                precision=self.texture_precision,
+                cache_texture=False,
+                draw_edges=self.texture_overlay,
+                boundary_only=self.texture_overlay,
+            )
+        except Exception:
+            logger.exception("failed to build textured panel mesh")
+            return self.get_panels(numribs)
     
     def get_ribs(self, hole_numpoints: int):
         ribs_mesh = openglider.mesh.Mesh()
@@ -125,6 +189,8 @@ class GliderActors:
     
  
     def add(self, view_3d: View3D, config: GliderViewConfig) -> None:
+        texture_key = f"{self.texture_svg_path or ''}|{self.texture_uv_mode}|{self.texture_precision:.3f}|{int(self.texture_overlay)}"
+
         if self.glider_3d is None or config.needs_recalc(self.config):
             self.glider_3d = self.project.get_glider_3d().copy()
 
@@ -136,13 +202,17 @@ class GliderActors:
                 rib.get_hull()
         
             self.actors = {
-                "panels": self.get_panels(config.numribs),
+                "panels": self.get_panels_textured(config.numribs),
                 "ribs": self.get_ribs(config.hole_numpoints),
                 "lines": self.get_lines(config.line_numpoints),
                 "diagonals": self.get_diagonals(config.hole_numpoints, config.numribs),
                 "straps": self.get_straps(config.numribs),
                 "miniribs": self.get_miniribs()
             }
+            self._panel_texture_key = texture_key
+        elif self._panel_texture_key != texture_key:
+            self.actors["panels"] = self.get_panels_textured(config.numribs)
+            self._panel_texture_key = texture_key
         
         for name in config.get_active_keys():
             view_3d.show_actor(self.actors[name])

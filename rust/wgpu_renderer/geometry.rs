@@ -72,6 +72,14 @@ fn compute_vertex_normals(mesh: &Mesh) -> Vec<[f32; 3]> {
     normals
 }
 
+fn mesh_uv(mesh: &Mesh, index: usize) -> [f32; 2] {
+    mesh
+        .uv_coords
+        .as_ref()
+        .and_then(|uvs| uvs.get(index).copied())
+        .unwrap_or([0.0, 0.0])
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct EdgeKey(u32, u32);
 impl EdgeKey {
@@ -93,6 +101,7 @@ pub(crate) fn mesh_to_vertices(
     let mut poly_edges: Vec<Vertex> = Vec::new();
     let mut edge_count: HashMap<EdgeKey, u32> = HashMap::new();
     let vertex_normals = compute_vertex_normals(mesh);
+    let use_texture = if mesh.texture.is_some() { 1.0 } else { 0.0 };
 
     if boundary_only && draw_polygon_edges {
         for obj in &mesh.objects {
@@ -115,9 +124,20 @@ pub(crate) fn mesh_to_vertices(
 
         for line in &obj.lines {
             if let (Some(a), Some(b)) = (mesh.points.get(line.a), mesh.points.get(line.b)) {
-                for p in [a, b] {
-                    mesh_lines.push(Vertex { position: [p.x as f32, p.y as f32, p.z as f32], color, normal: [0.0, 0.0, 1.0] });
-                }
+                mesh_lines.push(Vertex {
+                    position: [a.x as f32, a.y as f32, a.z as f32],
+                    color,
+                    normal: [0.0, 0.0, 1.0],
+                    tex_coord: [0.0, 0.0],
+                    use_texture: 0.0,
+                });
+                mesh_lines.push(Vertex {
+                    position: [b.x as f32, b.y as f32, b.z as f32],
+                    color,
+                    normal: [0.0, 0.0, 1.0],
+                    tex_coord: [0.0, 0.0],
+                    use_texture: 0.0,
+                });
             }
         }
 
@@ -131,9 +151,10 @@ pub(crate) fn mesh_to_vertices(
                     vertex_normals.get(t.b).copied().unwrap_or([0.0, 0.0, 1.0]),
                     vertex_normals.get(t.c).copied().unwrap_or([0.0, 0.0, 1.0]),
                 ];
-                for (pos, normal) in [(a, normals[0]), (b, normals[1]), (c, normals[2])] {
-                    fill.push(Vertex { position: pos, color, normal });
-                }
+                let tex = [mesh_uv(mesh, t.a), mesh_uv(mesh, t.b), mesh_uv(mesh, t.c)];
+                fill.push(Vertex { position: a, color, normal: normals[0], tex_coord: tex[0], use_texture });
+                fill.push(Vertex { position: b, color, normal: normals[1], tex_coord: tex[1], use_texture });
+                fill.push(Vertex { position: c, color, normal: normals[2], tex_coord: tex[2], use_texture });
                 if draw_polygon_edges {
                     for (k, pa, pb) in [
                         (EdgeKey::new(t.a as u32, t.b as u32), a, b),
@@ -141,8 +162,8 @@ pub(crate) fn mesh_to_vertices(
                         (EdgeKey::new(t.c as u32, t.a as u32), c, a),
                     ] {
                         if !boundary_only || edge_count.get(&k).map_or(false, |&n| n == 1) {
-                            poly_edges.push(Vertex { position: pa, color: ec, normal: [0.0,0.0,1.0] });
-                            poly_edges.push(Vertex { position: pb, color: ec, normal: [0.0,0.0,1.0] });
+                            poly_edges.push(Vertex { position: pa, color: ec, normal: [0.0,0.0,1.0], tex_coord: [0.0, 0.0], use_texture: 0.0 });
+                            poly_edges.push(Vertex { position: pb, color: ec, normal: [0.0,0.0,1.0], tex_coord: [0.0, 0.0], use_texture: 0.0 });
                         }
                     }
                 }
@@ -160,9 +181,10 @@ pub(crate) fn mesh_to_vertices(
                         vertex_normals.get(bi).copied().unwrap_or([0.0, 0.0, 1.0]),
                         vertex_normals.get(ci).copied().unwrap_or([0.0, 0.0, 1.0]),
                     ];
-                    for (pos, normal) in [(a, normals[0]), (b, normals[1]), (c, normals[2])] {
-                        fill.push(Vertex { position: pos, color, normal });
-                    }
+                    let tex = [mesh_uv(mesh, ai), mesh_uv(mesh, bi), mesh_uv(mesh, ci)];
+                    fill.push(Vertex { position: a, color, normal: normals[0], tex_coord: tex[0], use_texture });
+                    fill.push(Vertex { position: b, color, normal: normals[1], tex_coord: tex[1], use_texture });
+                    fill.push(Vertex { position: c, color, normal: normals[2], tex_coord: tex[2], use_texture });
                 }
             }
             if draw_polygon_edges {
@@ -172,8 +194,8 @@ pub(crate) fn mesh_to_vertices(
                     for (ai, bi, pi, qi) in [(q.a,q.b,0usize,1usize),(q.b,q.c,1,2),(q.c,q.d,2,3),(q.d,q.a,3,0)] {
                         let k = EdgeKey::new(ai as u32, bi as u32);
                         if !boundary_only || edge_count.get(&k).map_or(false, |&n| n == 1) {
-                            poly_edges.push(Vertex { position: pts[pi], color: ec, normal: [0.0,0.0,1.0] });
-                            poly_edges.push(Vertex { position: pts[qi], color: ec, normal: [0.0,0.0,1.0] });
+                            poly_edges.push(Vertex { position: pts[pi], color: ec, normal: [0.0,0.0,1.0], tex_coord: [0.0, 0.0], use_texture: 0.0 });
+                            poly_edges.push(Vertex { position: pts[qi], color: ec, normal: [0.0,0.0,1.0], tex_coord: [0.0, 0.0], use_texture: 0.0 });
                         }
                     }
                 }

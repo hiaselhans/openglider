@@ -20,7 +20,7 @@ mod geometry;
 use camera::{matrix_to_uniform, ProjectionMode};
 use geometry::mesh_to_vertices;
 
-use crate::mesh::Mesh;
+use crate::mesh::{Mesh, MeshTexture};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -28,6 +28,8 @@ struct Vertex {
     position: [f32; 3],
     color: [f32; 3],
     normal: [f32; 3],
+    tex_coord: [f32; 2],
+    use_texture: f32,
 }
 
 impl Vertex {
@@ -51,9 +53,26 @@ impl Vertex {
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x3,
                 },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 9]>() as u64,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 11]>() as u64,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32,
+                },
             ],
         }
     }
+}
+
+#[derive(Clone)]
+struct TextureData {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
 }
 
 #[repr(C)]
@@ -246,11 +265,18 @@ struct MeshData {
     poly_edge_vertex_count: u32,
 }
 
+struct TextureResources {
+    _texture: wgpu::Texture,
+    _view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+}
+
 /// Pre-calculated mesh with all edge mode variants cached
 struct CachedActor {
     no_edges: MeshData,
     all_edges: MeshData,
     boundary_edges: MeshData,
+    texture: Option<TextureResources>,
     current_mode: EdgeMode,
     visible: bool,
 }
@@ -291,6 +317,7 @@ pub struct MeshActor {
     mesh_lines: Vec<Vertex>,
     all_poly_edges: Vec<Vertex>,
     boundary_poly_edges: Vec<Vertex>,
+    texture: Option<TextureData>,
     draw_edges: bool,
     boundary_only: bool,
 }
@@ -304,7 +331,21 @@ impl MeshActor {
         let (fill, mesh_lines, _) = mesh_to_vertices(&mesh, false, false);
         let (_, _, all_poly) = mesh_to_vertices(&mesh, true, false);
         let (_, _, boundary_poly) = mesh_to_vertices(&mesh, true, true);
-        MeshActor { id, fill, mesh_lines, all_poly_edges: all_poly, boundary_poly_edges: boundary_poly, draw_edges, boundary_only }
+        let texture = mesh.texture.as_ref().map(|texture: &MeshTexture| TextureData {
+            width: texture.width,
+            height: texture.height,
+            rgba: texture.rgba.clone(),
+        });
+        MeshActor {
+            id,
+            fill,
+            mesh_lines,
+            all_poly_edges: all_poly,
+            boundary_poly_edges: boundary_poly,
+            texture,
+            draw_edges,
+            boundary_only,
+        }
     }
 }
 
@@ -321,6 +362,9 @@ struct RendererState {
     projection_mode: ProjectionMode,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+    texture_sampler: wgpu::Sampler,
+    default_texture_bind_group: wgpu::BindGroup,
     color_bounds_buffer: wgpu::Buffer,
     depth: DepthResources,
     actors: Vec<(String, CachedActor)>,
@@ -332,6 +376,57 @@ struct RendererState {
 }
 
 impl RendererState {
+    fn create_texture_resources(&self, texture: &TextureData) -> Option<TextureResources> {
+        if texture.width == 0 || texture.height == 0 {
+            return None;
+        }
+        if texture.rgba.len() != texture.width as usize * texture.height as usize * 4 {
+            return None;
+        }
+
+        let gpu_texture = self.device.create_texture_with_data(
+            &self.queue,
+            &wgpu::TextureDescriptor {
+                label: Some("openglider.texture.actor"),
+                size: wgpu::Extent3d {
+                    width: texture.width,
+                    height: texture.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &texture.rgba,
+        );
+
+        let view = gpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("openglider.texture.actor.bindgroup"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.texture_sampler),
+                },
+            ],
+        });
+
+        Some(TextureResources {
+            _texture: gpu_texture,
+            _view: view,
+            bind_group,
+        })
+    }
+
     fn new(platform: &str, window_id: u64, width: u32, height: u32, display_id: Option<u64>) -> PyResult<Self> {
         let native = make_native_handles(platform, window_id, display_id)?;
 
@@ -439,6 +534,29 @@ impl RendererState {
                 ],
             });
 
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("openglider.texture.layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("openglider.uniforms.bindgroup"),
             layout: &uniform_bind_group_layout,
@@ -454,6 +572,52 @@ impl RendererState {
             ],
         });
 
+        let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("openglider.texture.sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let default_texture = device.create_texture_with_data(
+            &queue,
+            &wgpu::TextureDescriptor {
+                label: Some("openglider.texture.default"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &[255, 255, 255, 255],
+        );
+        let default_texture_view = default_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let default_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("openglider.texture.default.bindgroup"),
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&default_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                },
+            ],
+        });
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("openglider.mesh.shader"),
             source: wgpu::ShaderSource::Wgsl(SHADER_SOURCE.into()),
@@ -461,7 +625,7 @@ impl RendererState {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("openglider.pipeline.layout"),
-            bind_group_layouts: &[&uniform_bind_group_layout],
+            bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -633,6 +797,9 @@ impl RendererState {
             projection_mode: ProjectionMode::Orthographic,
             uniform_buffer,
             uniform_bind_group,
+            texture_bind_group_layout,
+            texture_sampler,
+            default_texture_bind_group,
             color_bounds_buffer,
             depth,
             actors: Vec::new(),
@@ -784,6 +951,13 @@ impl RendererState {
             no_edges,
             all_edges,
             boundary_edges,
+            texture: mesh.texture.as_ref().and_then(|t| {
+                self.create_texture_resources(&TextureData {
+                    width: t.width,
+                    height: t.height,
+                    rgba: t.rgba.clone(),
+                })
+            }),
             current_mode: EdgeMode::NoEdges,
             visible: true,
         };
@@ -837,6 +1011,7 @@ impl RendererState {
             no_edges,
             all_edges,
             boundary_edges,
+            texture: actor.texture.as_ref().and_then(|t| self.create_texture_resources(t)),
             current_mode: EdgeMode::NoEdges,
             visible: true,
         };
@@ -921,6 +1096,12 @@ impl RendererState {
                 if !actor.visible { continue; }
                 let stencil_id = ((i % 255) + 1) as u32;
                 render_pass.set_stencil_reference(stencil_id);
+                let texture_bind_group = actor
+                    .texture
+                    .as_ref()
+                    .map(|texture| &texture.bind_group)
+                    .unwrap_or(&self.default_texture_bind_group);
+                render_pass.set_bind_group(1, texture_bind_group, &[]);
                 let d = actor.get_data();
                 if d.fill_vertex_count > 0 {
                     render_pass.set_vertex_buffer(0, d.fill_vertex_buffer.slice(..));
@@ -932,6 +1113,7 @@ impl RendererState {
             render_pass.set_pipeline(&self.mesh_line_pipeline);
             for (_, actor) in &self.actors {
                 if !actor.visible { continue; }
+                render_pass.set_bind_group(1, &self.default_texture_bind_group, &[]);
                 let d = actor.get_data();
                 if d.mesh_line_vertex_count > 0 {
                     render_pass.set_vertex_buffer(0, d.mesh_line_vertex_buffer.slice(..));
@@ -945,6 +1127,7 @@ impl RendererState {
                 if !actor.visible { continue; }
                 let stencil_id = ((i % 255) + 1) as u32;
                 render_pass.set_stencil_reference(stencil_id);
+                render_pass.set_bind_group(1, &self.default_texture_bind_group, &[]);
                 let d = actor.get_data();
                 if d.poly_edge_vertex_count > 0 {
                     render_pass.set_vertex_buffer(0, d.poly_edge_vertex_buffer.slice(..));

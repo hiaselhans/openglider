@@ -6,6 +6,13 @@ use std::fs;
 
 use crate::vector::{PolyLine2D, Vector2D, Vector3D};
 
+#[derive(Clone, Debug)]
+pub struct MeshTexture {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
 #[derive(Debug, Clone)]
 struct UnionFind {
     parent: Vec<usize>,
@@ -227,6 +234,8 @@ pub struct Mesh {
     pub points: Vec<Vector3D>,
     #[pyo3(get)]
     pub objects: Vec<MeshObject>,
+    pub uv_coords: Option<Vec<[f32; 2]>>,
+    pub texture: Option<MeshTexture>,
 }
 
 #[pymethods]
@@ -238,6 +247,8 @@ impl Mesh {
             name,
             points: Vec::new(),
             objects: Vec::new(),
+            uv_coords: None,
+            texture: None,
         }
     }
 
@@ -252,10 +263,12 @@ impl Mesh {
         node_attributes: Option<Vec<Py<PyAny>>>,
     ) -> PyResult<Self> {
         let _ = boundaries;
-        let _ = node_attributes;
-
         let mut mesh = Self::new(name);
         mesh.points = vertices;
+
+        if let Some(attrs) = node_attributes {
+            mesh.uv_coords = parse_uv_node_attributes(py, &attrs)?;
+        }
 
         for (object_name, object_polygons) in polygons {
             let color = parse_color_code(&object_name);
@@ -419,7 +432,215 @@ impl Mesh {
             name: mesh_name,
             points,
             objects: objects.into_values().collect(),
+            uv_coords: None,
+            texture: None,
         })
+    }
+
+    fn set_uv_coords(&mut self, uv_coords: Vec<(f32, f32)>) -> PyResult<()> {
+        if uv_coords.len() != self.points.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "uv_coords length ({}) must match vertex count ({})",
+                uv_coords.len(),
+                self.points.len(),
+            )));
+        }
+
+        self.uv_coords = Some(uv_coords.into_iter().map(|(u, v)| [u, v]).collect());
+        Ok(())
+    }
+
+    #[pyo3(signature = (projection = "xy".to_string()))]
+    fn generate_uvs(&mut self, projection: String) -> PyResult<()> {
+        if self.points.is_empty() {
+            self.uv_coords = Some(Vec::new());
+            return Ok(());
+        }
+
+        let (axis_u, axis_v) = match projection.as_str() {
+            "xy" => (0usize, 1usize),
+            "xz" => (0usize, 2usize),
+            "yz" => (1usize, 2usize),
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "projection must be one of: xy, xz, yz",
+                ));
+            }
+        };
+
+        let mut min_vals = [f64::INFINITY; 3];
+        let mut max_vals = [f64::NEG_INFINITY; 3];
+        for p in &self.points {
+            let values = [p.x, p.y, p.z];
+            for i in 0..3 {
+                min_vals[i] = min_vals[i].min(values[i]);
+                max_vals[i] = max_vals[i].max(values[i]);
+            }
+        }
+
+        let du = (max_vals[axis_u] - min_vals[axis_u]).max(1e-9);
+        let dv = (max_vals[axis_v] - min_vals[axis_v]).max(1e-9);
+
+        self.uv_coords = Some(
+            self.points
+                .iter()
+                .map(|p| {
+                    let values = [p.x, p.y, p.z];
+                    let u = ((values[axis_u] - min_vals[axis_u]) / du) as f32;
+                    let v = ((values[axis_v] - min_vals[axis_v]) / dv) as f32;
+                    [u, v]
+                })
+                .collect(),
+        );
+
+        Ok(())
+    }
+
+    fn clear_uvs(&mut self) {
+        self.uv_coords = None;
+    }
+
+    fn get_uv_coords(&self) -> Option<Vec<(f32, f32)>> {
+        self.uv_coords.as_ref().map(|uvs| {
+            uvs.iter().map(|uv| (uv[0], uv[1])).collect()
+        })
+    }
+
+    fn remap_uvs_bilinear(
+        &mut self,
+        back_left: (f64, f64),
+        back_right: (f64, f64),
+        front_right: (f64, f64),
+        front_left: (f64, f64),
+        bbox: (f64, f64, f64, f64),
+    ) {
+        let local_uvs = match self.uv_coords.take() {
+            Some(uvs) => uvs,
+            None => return,
+        };
+
+        let (min_x, max_x, min_y, max_y) = bbox;
+        let dx = (max_x - min_x).max(1e-9);
+        let dy = (max_y - min_y).max(1e-9);
+        let (bl_x, bl_y) = back_left;
+        let (br_x, br_y) = back_right;
+        let (fr_x, fr_y) = front_right;
+        let (fl_x, fl_y) = front_left;
+
+        self.uv_coords = Some(
+            local_uvs
+                .iter()
+                .map(|uv| {
+                    let lu = uv[0] as f64;
+                    let lv = uv[1] as f64;
+                    let gx = fl_x * (1.0 - lu) * (1.0 - lv)
+                        + bl_x * lu * (1.0 - lv)
+                        + fr_x * (1.0 - lu) * lv
+                        + br_x * lu * lv;
+                    let gy = fl_y * (1.0 - lu) * (1.0 - lv)
+                        + bl_y * lu * (1.0 - lv)
+                        + fr_y * (1.0 - lu) * lv
+                        + br_y * lu * lv;
+                    let norm_u = ((gx - min_x) / dx) as f32;
+                    let norm_v = (1.0 - (gy - min_y) / dy) as f32;
+                    [norm_u.clamp(0.0, 1.0), norm_v.clamp(0.0, 1.0)]
+                })
+                .collect(),
+        );
+    }
+
+    /// Map per-vertex (span_normalized, chord_p) UV coords (stored by Panel::get_mesh
+    /// when called with x_span_left/right) to final texture UV.
+    ///
+    /// span_normalized: rib x-value divided by max span, in [0,1] for the right half-wing.
+    /// chord_p:         signed profile x-value (0 = LE, +ve = upper surface, -ve = lower).
+    ///
+    /// Stacking: upper panels (chord_p >= 0) sit above the LE line;
+    ///           lower panels (chord_p < 0) are shifted by lower_offset so they form a
+    ///           separate "lower sail" shape below.
+    ///
+    /// tex_u: derived from span (negate_span = true for the mirrored left half-wing).
+    /// tex_v: 1 − normalised layout_y  (v-flip so WGPU v=0 is the top of the image).
+    fn remap_uvs_stacked(
+        &mut self,
+        span_min: f64,
+        span_max: f64,
+        y_min: f64,
+        y_max: f64,
+        lower_offset: f64,
+        negate_span: bool,
+    ) {
+        let local_uvs = match self.uv_coords.take() {
+            Some(uvs) => uvs,
+            None => return,
+        };
+
+        let d_span = (span_max - span_min).max(1e-9);
+        let d_y = (y_max - y_min).max(1e-9);
+
+        self.uv_coords = Some(
+            local_uvs
+                .iter()
+                .map(|uv| {
+                    let span_norm = uv[0] as f64;
+                    let chord_p = uv[1] as f64;
+                    let span_eff = if negate_span { -span_norm } else { span_norm };
+                    let layout_y = if chord_p < 0.0 { chord_p + lower_offset } else { chord_p };
+                    let tex_u = ((span_eff - span_min) / d_span) as f32;
+                    let tex_v = (1.0 - (layout_y - y_min) / d_y) as f32;
+                    [tex_u.clamp(0.0, 1.0), tex_v.clamp(0.0, 1.0)]
+                })
+                .collect(),
+        );
+    }
+
+    /// Mirror the mesh geometry (and fix winding order) without touching UV coordinates.
+    /// Unlike mirror(), this leaves uv_coords untouched so that remap_uvs_stacked can
+    /// use the original stored (span_norm, chord_p) values even after geometry mirroring.
+    #[pyo3(signature = (axis = "x"))]
+    fn mirror_geometry_only(&mut self, axis: &str) -> Self {
+        let factors: (f64, f64, f64) = match axis {
+            "y" => (1.0, -1.0, 1.0),
+            "z" => (1.0, 1.0, -1.0),
+            _ => (-1.0, 1.0, 1.0),
+        };
+        for point in &mut self.points {
+            point.x *= factors.0;
+            point.y *= factors.1;
+            point.z *= factors.2;
+        }
+        for object in &mut self.objects {
+            for triangle in &mut object.triangles {
+                std::mem::swap(&mut triangle.b, &mut triangle.c);
+            }
+            for quad in &mut object.quads {
+                let a = quad.a; let b = quad.b; let c = quad.c; let d = quad.d;
+                quad.a = d; quad.b = c; quad.c = b; quad.d = a;
+            }
+        }
+        self.clone()
+    }
+
+    fn set_texture_rgba(&mut self, width: u32, height: u32, rgba: Vec<u8>) -> PyResult<()> {
+        let expected = width as usize * height as usize * 4usize;
+        if rgba.len() != expected {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "rgba length ({}) does not match width*height*4 ({})",
+                rgba.len(),
+                expected,
+            )));
+        }
+
+        self.texture = Some(MeshTexture { width, height, rgba });
+        Ok(())
+    }
+
+    fn clear_texture(&mut self) {
+        self.texture = None;
+    }
+
+    fn has_texture(&self) -> bool {
+        self.texture.is_some()
     }
 
     fn add_point(&mut self, point: PyRef<'_, Vector3D>) -> usize {
@@ -530,6 +751,18 @@ impl Mesh {
             point.z *= factors.2;
         }
 
+        if let Some(uvs) = self.uv_coords.as_mut() {
+            if axis == "x" {
+                for uv in uvs {
+                    uv[0] = 1.0 - uv[0];
+                }
+            } else if axis == "y" {
+                for uv in uvs {
+                    uv[1] = 1.0 - uv[1];
+                }
+            }
+        }
+
         for object in &mut self.objects {
             for triangle in &mut object.triangles {
                 std::mem::swap(&mut triangle.b, &mut triangle.c);
@@ -591,6 +824,8 @@ impl Mesh {
             name: self.name.clone(),
             points: self.points.clone(),
             objects: selected,
+            uv_coords: self.uv_coords.clone(),
+            texture: self.texture.clone(),
         })
     }
 
@@ -811,6 +1046,18 @@ impl Mesh {
 
         self.points = merged_points;
 
+        if let Some(old_uvs) = &self.uv_coords {
+            let mut new_uvs = vec![[0.0_f32, 0.0_f32]; self.points.len()];
+            let mut seen = vec![false; self.points.len()];
+            for (old_index, new_index) in old_to_new.iter().enumerate() {
+                if !seen[*new_index] {
+                    new_uvs[*new_index] = old_uvs[old_index];
+                    seen[*new_index] = true;
+                }
+            }
+            self.uv_coords = Some(new_uvs);
+        }
+
         for object in &mut self.objects {
             object.lines = object
                 .lines
@@ -883,6 +1130,22 @@ impl Mesh {
 impl Mesh {
     fn merge_from(&mut self, other: &Mesh) {
         let offset = self.points.len();
+
+        if self.uv_coords.is_some() || other.uv_coords.is_some() {
+            let mut merged_uvs = self
+                .uv_coords
+                .clone()
+                .unwrap_or_else(|| vec![[0.0, 0.0]; self.points.len()]);
+
+            if let Some(other_uvs) = &other.uv_coords {
+                merged_uvs.extend(other_uvs.iter().copied());
+            } else {
+                merged_uvs.extend(vec![[0.0, 0.0]; other.points.len()]);
+            }
+
+            self.uv_coords = Some(merged_uvs);
+        }
+
         self.points.extend(other.points.iter().copied());
 
         for other_object in &other.objects {
@@ -986,6 +1249,40 @@ fn extract_indices(py: Python<'_>, value: &Py<PyAny>) -> PyResult<Vec<usize>> {
     Err(pyo3::exceptions::PyTypeError::new_err(
         "polygon index data must be a sequence of integers",
     ))
+}
+
+fn parse_uv_node_attributes(py: Python<'_>, node_attributes: &[Py<PyAny>]) -> PyResult<Option<Vec<[f32; 2]>>> {
+    let mut uv_coords: Vec<[f32; 2]> = Vec::with_capacity(node_attributes.len());
+    let mut has_any = false;
+
+    for attr in node_attributes {
+        let bound = attr.bind(py);
+        if let Ok(dict) = bound.cast::<PyDict>() {
+            let uv_value = dict.get_item("uv")?;
+            if let Some(value) = uv_value {
+                if let Ok((u, v)) = value.extract::<(f32, f32)>() {
+                    uv_coords.push([u, v]);
+                    has_any = true;
+                    continue;
+                }
+                if let Ok(values) = value.extract::<Vec<f32>>() {
+                    if values.len() == 2 {
+                        uv_coords.push([values[0], values[1]]);
+                        has_any = true;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        uv_coords.push([0.0, 0.0]);
+    }
+
+    if !has_any {
+        return Ok(None);
+    }
+
+    Ok(Some(uv_coords))
 }
 
 fn parse_color_code(name: &str) -> (u8, u8, u8) {

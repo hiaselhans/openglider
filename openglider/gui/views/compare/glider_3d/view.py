@@ -135,7 +135,8 @@ class Glider3DView(QtWidgets.QWidget, CompareView):
     
     def update_config(self) -> None:
         self.view_3d.clear()
-        for actor in self.actor_cache.get_update().active:
+        changeset = self.actor_cache.get_update()
+        for actor in changeset.active:
             actor.add(self.view_3d, self.config.config)
 
         if self.imported_mesh_actor is not None:

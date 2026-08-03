@@ -5,6 +5,9 @@
 - Activate it before running Python tooling:
   - `source ../venv/bin/activate`
 - Prefer this interpreter for tests, scripts, and packaging commands.
+- For all local install/build validation steps in this repo, always use:
+  - `uv pip install -e .`
+- Do not use `pip install -e .` directly in this repository.
 
 ## Core Repository Structure
 - `openglider/`: main Python package.
@@ -29,4 +32,4 @@
 - Changes touching `rust/` likely impact the `openglider.rs` extension build.
 - Changes touching `src_cpp/` likely impact the `openglider.xfoil` extension build.
 - When both Python and native code change, validate with an editable install from repo root:
-  - `pip install -e .`
+  - `uv pip install -e .`

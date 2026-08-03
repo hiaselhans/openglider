@@ -540,8 +540,8 @@ class Layout:
 
         return drawing.tostring()
 
-    def export_svg(self, path: str | os.PathLike, add_styles: bool=False, fill: bool=False) -> None:
-        drawing = self.get_svg_drawing(fill=fill)
+    def export_svg(self, path: str | os.PathLike, add_styles: bool=False, fill: bool=False, border: float=0.02) -> None:
+        drawing = self.get_svg_drawing(border=border, fill=fill)
 
         if add_styles:
             self.add_svg_styles(drawing)

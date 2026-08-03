@@ -1,6 +1,7 @@
 from . import mesh as mesh
 from . import plane as plane
 from . import spline as spline
+from . import svg_mod as svg_mod
 from . import vector as vector
 from . import voronoi as voronoi
 from . import wgpu as wgpu

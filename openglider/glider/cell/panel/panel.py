@@ -345,11 +345,16 @@ class Panel(BaseModel):
             # todo: return polygon-data
         return ribs
 
-    def get_mesh(self, cell: Cell, numribs: int=0, exact: bool=False, tri: bool=False) -> mesh.Mesh:
+    def get_mesh(self, cell: Cell, numribs: int=0, exact: bool=False, tri: bool=False,
+                 x_span_left: float | None = None, x_span_right: float | None = None,
+                 chord_left: float | None = None, chord_right: float | None = None) -> mesh.Mesh:
         """
         Get Panel-mesh
         :param cell: the parent cell of the panel
         :param numribs: number of interpolation steps between ribs
+        :param x_span_left: when provided (together with x_span_right and chord_left/right),
+            store global (span_normalized, y_physical) UV coords instead of local (u, v).
+            y_physical = chord_p * interpolated_chord  so it matches _get_panel_shape exactly.
         :return: mesh objects consisting of triangles and quadrangles
         """
         # TODO: doesn't work for numribs=0?
@@ -359,18 +364,38 @@ class Panel(BaseModel):
 
         rib_iks: list[list[float]] = []
         nodes: list[openglider.rs.vector.Vector3D] = []
+        node_attributes: list[dict[str, tuple[float, float]]] = []
         rib_node_indices: list[list[int]] = []
 
         ik_values = self.get_ik_values(cell, numribs, exact=exact)
 
         for rib_no in range(numribs + 2):
             y = rib_no / max(numribs+1, 1)
+            span_x = x_span_left + y * (x_span_right - x_span_left) if x_span_left is not None else None
+            chord_y = (chord_left + y * (chord_right - chord_left)
+                       if chord_left is not None else None)
 
             front, back = ik_values[rib_no]
 
             midrib = cell.midrib(y)
 
             rib_iks.append(midrib.get_positions(front, back))
+
+            ik_range = back - front
+            for ik in rib_iks[-1]:
+                if span_x is not None:
+                    # Global glider coords: (span_normalized, y_physical)
+                    # y_physical = chord_p * chord_y matches _get_panel_shape exactly.
+                    chord_p = float(x_value_interpolation.get_value(ik))
+                    y_phys = chord_p * chord_y if chord_y is not None else chord_p
+                    node_attributes.append({"uv": (float(span_x), y_phys)})
+                else:
+                    if abs(ik_range) > 1e-9:
+                        u = (ik - front) / ik_range
+                    else:
+                        u = 0.0
+                    u = max(0.0, min(1.0, u))
+                    node_attributes.append({"uv": (float(u), float(y))})
 
             i0 = len(nodes)
             rib_node_indices.append([i + i0 for i, _ in enumerate(rib_iks[-1])])
@@ -441,7 +466,7 @@ class Panel(BaseModel):
             f"panel_{self.material}#{self.material.color_code}": polygons,
         }
 
-        return mesh.Mesh.from_indexed(nodes, mesh_data, name=self.name)
+        return mesh.Mesh.from_indexed(nodes, mesh_data, name=self.name, node_attributes=node_attributes)
 
     def mirror(self) -> Panel:
         """
