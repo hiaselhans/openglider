@@ -6,6 +6,17 @@ type SourceBbox = (f32, f32, f32, f32);
 type RasterRequest = (u32, u32, Option<SourceBbox>);
 type UvBbox = (f32, f32, f32, f32);
 
+fn load_svg_tree(file_path: &str) -> PyResult<usvg::Tree> {
+    let svg_data = fs::read(file_path)
+        .map_err(|err| PyValueError::new_err(format!("failed to read svg file '{}': {}", file_path, err)))?;
+
+    let mut options = usvg::Options::default();
+    options.fontdb_mut().load_system_fonts();
+
+    usvg::Tree::from_data(&svg_data, &options)
+        .map_err(|err| PyValueError::new_err(format!("failed to parse svg file '{}': {}", file_path, err)))
+}
+
 #[pyfunction]
 #[pyo3(signature = (file_path, width, height, precision = 1.0, source_bbox = None))]
 pub fn render_svg_rgba(
@@ -15,12 +26,7 @@ pub fn render_svg_rgba(
     precision: f32,
     source_bbox: Option<(f32, f32, f32, f32)>,
 ) -> PyResult<(u32, u32, Vec<u8>)> {
-    let svg_data = fs::read(&file_path)
-        .map_err(|err| PyValueError::new_err(format!("failed to read svg file '{}': {}", file_path, err)))?;
-
-    let options = usvg::Options::default();
-    let tree = usvg::Tree::from_data(&svg_data, &options)
-        .map_err(|err| PyValueError::new_err(format!("failed to parse svg file '{}': {}", file_path, err)))?;
+    let tree = load_svg_tree(&file_path)?;
 
     let precision = precision.max(0.1);
     let width = ((width as f32) * precision).round().max(1.0) as u32;
@@ -34,7 +40,7 @@ pub fn render_svg_rgba(
     let source_h = source_h.max(1e-6);
     let scale_x = width as f32 / source_w;
     let scale_y = height as f32 / source_h;
-    let transform = tiny_skia::Transform::from_translate(-source_x, -source_y).pre_scale(scale_x, scale_y);
+    let transform = usvg::Transform::from_translate(-source_x, -source_y).pre_scale(scale_x, scale_y);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
     Ok((width, height, pixmap.take()))
@@ -72,12 +78,7 @@ pub fn render_svg_rgba_crop_batch(
     bboxes: Vec<UvBbox>,
     precision: f32,
 ) -> PyResult<Vec<Option<(u32, u32, Vec<u8>)>>> {
-    let svg_data = fs::read(&file_path)
-        .map_err(|err| PyValueError::new_err(format!("failed to read svg file '{}': {}", file_path, err)))?;
-
-    let options = usvg::Options::default();
-    let tree = usvg::Tree::from_data(&svg_data, &options)
-        .map_err(|err| PyValueError::new_err(format!("failed to parse svg file '{}': {}", file_path, err)))?;
+    let tree = load_svg_tree(&file_path)?;
 
     let precision = precision.max(0.1);
     let render_width = ((width as f32) * precision).round().max(1.0) as u32;
@@ -89,7 +90,7 @@ pub fn render_svg_rgba_crop_batch(
     let source_size = tree.size();
     let scale_x = render_width as f32 / source_size.width().max(1e-6);
     let scale_y = render_height as f32 / source_size.height().max(1e-6);
-    let transform = tiny_skia::Transform::from_scale(scale_x, scale_y);
+    let transform = usvg::Transform::from_scale(scale_x, scale_y);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
     let source = pixmap.data();
@@ -145,12 +146,7 @@ fn render_svg_rgba_batch_requests(
     requests: Vec<RasterRequest>,
     precision: f32,
 ) -> PyResult<Vec<Option<Vec<u8>>>> {
-    let svg_data = fs::read(&file_path)
-        .map_err(|err| PyValueError::new_err(format!("failed to read svg file '{}': {}", file_path, err)))?;
-
-    let options = usvg::Options::default();
-    let tree = usvg::Tree::from_data(&svg_data, &options)
-        .map_err(|err| PyValueError::new_err(format!("failed to parse svg file '{}': {}", file_path, err)))?;
+    let tree = load_svg_tree(&file_path)?;
 
     let source_size = tree.size();
     let default_bbox = (0.0, 0.0, source_size.width(), source_size.height());
@@ -178,7 +174,7 @@ fn render_svg_rgba_batch_requests(
 
         let scale_x = width as f32 / source_w;
         let scale_y = height as f32 / source_h;
-        let transform = tiny_skia::Transform::from_translate(-source_x, -source_y).pre_scale(scale_x, scale_y);
+        let transform = usvg::Transform::from_translate(-source_x, -source_y).pre_scale(scale_x, scale_y);
         resvg::render(&tree, transform, &mut pixmap.as_mut());
         results.push(Some(pixmap.take()));
     }

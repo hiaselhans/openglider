@@ -169,6 +169,7 @@ class Texture3DPreview(QtWidgets.QWidget):
     def __init__(self, parent: QtWidgets.QWidget, app: MainWindow) -> None:
         super().__init__(parent)
         self.app = app
+        self._is_shutting_down = False
         self.setLayout(QtWidgets.QVBoxLayout())
 
         self._fixed_config = GliderViewConfig(
@@ -182,7 +183,10 @@ class Texture3DPreview(QtWidgets.QWidget):
 
         self.view_3d = View3D(self)
         self.view_3d.show_axes = False
+        self.view_3d.destroyed.connect(self._on_view_destroyed)
         self.layout().addWidget(self.view_3d)
+
+        self.view_3d.render_widget.destroyed.connect(self._on_view_destroyed)
 
         self.actor_cache = Glider3DCache(app.state.projects)
 
@@ -207,6 +211,9 @@ class Texture3DPreview(QtWidgets.QWidget):
         for actor in self.actor_cache.cache.values():
             actor.invalidate_texture_cache()
 
+    def _on_view_destroyed(self, *_: object) -> None:
+        self.shutdown()
+
     def update_scene(self) -> None:
         self.view_3d.clear()
 
@@ -223,7 +230,15 @@ class Texture3DPreview(QtWidgets.QWidget):
         self.view_3d.rerender()
 
     def shutdown(self) -> None:
-        self.view_3d.shutdown()
+        if self._is_shutting_down:
+            return
+
+        self._is_shutting_down = True
+        try:
+            self.view_3d.shutdown()
+        except RuntimeError:
+            # The Qt object may already be in destruction; ignore late shutdown attempts.
+            pass
 
 
 class Texture2DPreview(QtWidgets.QWidget):
@@ -285,7 +300,7 @@ class Texture2DPreview(QtWidgets.QWidget):
                     image = texture.get_raster_bounded(8192, precision=precision, cache=False)
                     image_data = np.asarray(image)
                     # Align SVG raster orientation with layout coordinates.
-                    image_data = np.flip(image_data, axis=(0, 1))
+                    image_data = np.flip(image_data, axis=0)
                     axes.imshow(
                         image_data,
                         extent=(min_x, max_x, min_y, max_y),

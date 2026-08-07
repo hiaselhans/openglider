@@ -276,7 +276,76 @@ fn polyline2d_fix_errors(nodes: &[Vector2D]) -> Vec<Vector2D> {
         }
     }
 
-    cleaned
+    simplify_short_zigzags_auto(&cleaned, TOLERANCE * 10.0)
+}
+
+fn turn_angle_deg(a: Vector2D, b: Vector2D, c: Vector2D) -> f64 {
+    let ab = b.sub(a);
+    let bc = c.sub(b);
+    let ab_len = ab.length();
+    let bc_len = bc.length();
+    if ab_len < 1e-12 || bc_len < 1e-12 {
+        return 0.0;
+    }
+
+    let cosang = (ab.dot(bc) / (ab_len * bc_len)).clamp(-1.0, 1.0);
+    cosang.acos().to_degrees()
+}
+
+fn simplify_short_zigzags_auto(nodes: &[Vector2D], absolute_tolerance: f64) -> Vec<Vector2D> {
+    if nodes.len() < 4 {
+        return nodes.to_vec();
+    }
+
+    let mut simplified = nodes.to_vec();
+    let ratio_threshold = 0.25;
+    let angle_threshold_deg = 45.0;
+    let mut changed = true;
+
+    while changed && simplified.len() >= 4 {
+        changed = false;
+        let mut index = 1usize;
+
+        while index + 2 < simplified.len() {
+            let left_len = simplified[index - 1].distance(simplified[index]);
+            let seg_len = simplified[index].distance(simplified[index + 1]);
+            let right_len = simplified[index + 1].distance(simplified[index + 2]);
+
+            let local_threshold = absolute_tolerance.max(left_len.min(right_len) * ratio_threshold);
+            if seg_len >= local_threshold {
+                index += 1;
+                continue;
+            }
+
+            let a = simplified[index - 1];
+            let b = simplified[index];
+            let c = simplified[index + 1];
+            let d = simplified[index + 2];
+
+            let angle_b = turn_angle_deg(a, b, c);
+            let angle_c = turn_angle_deg(b, c, d);
+            if angle_b.max(angle_c) < angle_threshold_deg {
+                index += 1;
+                continue;
+            }
+
+            let score_remove_b = turn_angle_deg(a, c, d);
+            let score_remove_c = turn_angle_deg(a, b, d);
+
+            if score_remove_b <= score_remove_c {
+                simplified.remove(index);
+            } else {
+                simplified.remove(index + 1);
+            }
+
+            changed = true;
+            if index > 1 {
+                index -= 1;
+            }
+        }
+    }
+
+    simplified
 }
 
 pub(crate) fn polyline2d_cut_line(nodes: &[Vector2D], p1: Vector2D, p2: Vector2D) -> Vec<(f64, f64)> {
@@ -710,6 +779,23 @@ impl PolyLine2D {
             let segment_1 = segments_normalized[index];
             let segment_2 = segments_normalized[index + 1];
             let cos_angle = segment_1.dot(segment_2);
+            let segment_1_len = segments[index].length();
+            let segment_2_len = segments[index + 1].length();
+            let tiny_segment_threshold = amount.abs().max(1e-6) * 0.25;
+
+            let fallback_join = || {
+                let merged_normal = segment_normals[index].add(segment_normals[index + 1]);
+                if merged_normal.length() > EPSILON {
+                    clean_line.nodes[index + 1].add(merged_normal.normalized().scale(amount))
+                } else {
+                    offset_segments[index].1.add(offset_segments[index + 1].0).scale(0.5)
+                }
+            };
+
+            if segment_1_len < tiny_segment_threshold || segment_2_len < tiny_segment_threshold {
+                result.push(fallback_join());
+                continue;
+            }
 
             if cos_angle > 0.999 || segment_1.length() < EPSILON || segment_2.length() < EPSILON {
                 let average = offset_segments[index].1.add(offset_segments[index + 1].0).scale(0.5);
@@ -735,16 +821,13 @@ impl PolyLine2D {
                     if miter_distance <= max_miter_distance {
                         result.push(point);
                     } else {
-                        result.push(offset_segments[index].1);
-                        result.push(offset_segments[index + 1].0);
+                        result.push(fallback_join());
                     }
                 } else {
-                    result.push(offset_segments[index].1);
-                    result.push(offset_segments[index + 1].0);
+                    result.push(fallback_join());
                 }
             } else {
-                result.push(offset_segments[index].1);
-                result.push(offset_segments[index + 1].0);
+                result.push(fallback_join());
             }
         }
 
