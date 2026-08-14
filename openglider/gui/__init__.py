@@ -13,7 +13,7 @@ if sys.platform.startswith("linux"):
 
 def start_main_window() -> None:
     from openglider.gui.app import GliderApp
-    from openglider.gui.qt import QtCore, QtWidgets
+    from openglider.gui.qt import QtCore, QtGui, QtWidgets
 
     QtWidgets.QApplication.setAttribute(
         QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts,
@@ -24,6 +24,8 @@ def start_main_window() -> None:
             QtCore.Qt.ApplicationAttribute.AA_UseDesktopOpenGL,
             True
         )
+    elif sys.platform.startswith("linux"):
+        QtGui.QGuiApplication.setDesktopFileName("openglider")
 
     app = GliderApp(sys.argv)
 

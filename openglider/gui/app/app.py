@@ -5,6 +5,7 @@ import importlib
 import io
 import logging
 import os
+from pathlib import Path
 import sys
 import time
 import traceback
@@ -17,7 +18,7 @@ import qtmodern.styles
 import qtmodern.windows
 
 from openglider.version import __version__
-from openglider.gui.qt import QtCore, QtWidgets
+from openglider.gui.qt import QtCore, QtWidgets, QtGui
 from openglider.gui.app.files import OpengliderDir
 from openglider.gui.app.splash import SplashController
 from qasync import QEventLoop
@@ -29,6 +30,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+icon_path = Path(__file__).parent.parent / "openglider.png"
+
+
+def get_window_icon() -> QtGui.QIcon:
+    icon = QtGui.QIcon(str(icon_path.resolve()))
+    if icon.isNull():
+        logger.warning(f"Failed to load window icon from {icon_path}")
+    return icon
 
 class GliderApp(QtWidgets.QApplication):
     debug = False
@@ -42,7 +51,10 @@ class GliderApp(QtWidgets.QApplication):
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.setQuitOnLastWindowClosed(True)
-        self.setApplicationName(f"OpenGlider v {__version__}")
+        self.setApplicationName("openglider")
+        self.setApplicationDisplayName(f"OpenGlider v {__version__}")
+
+        self.setWindowIcon(get_window_icon())
         qtmodern.styles.dark(self)
 
         log_format = '%(levelname)s %(asctime)s - %(name)s : %(message)s'

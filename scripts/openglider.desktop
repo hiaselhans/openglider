@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=OpenGlider
+Comment=Paraglider design and simulation
+Exec=openglider
+Icon=openglider
+Categories=Science;Engineering;
+Keywords=glider;paraglider;design;simulation;
+Terminal=false
+StartupNotify=true
+StartupWMClass=openglider

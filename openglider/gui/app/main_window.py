@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from collections.abc import Callable, Iterator
 
 from openglider.glider.project import GliderProject
+from openglider.gui.app.app import get_window_icon
 from openglider.gui.qt import QtCore, QtWidgets, QtGui, QAction
 from openglider.version import __version__
 from openglider.gui.icons import icon
@@ -70,10 +71,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, app: GliderApp):
         super().__init__()
         self.setWindowTitle(f"OpenGlider v {__version__}")
-        gui_dir = os.path.dirname(os.path.dirname(__file__))
-        filepath = os.path.join(gui_dir, "openglider.png")
-        print(filepath)
-        self.setWindowIcon(QtGui.QIcon(filepath))
+        self.setWindowIcon(get_window_icon())
         
         self.app = app
         self.state = app.state
