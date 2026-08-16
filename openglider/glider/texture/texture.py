@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-from openglider.glider.texture.uv_map.mirrored import UVMapMirrored
-from openglider.glider.texture.uv_map.stacked import UVMapStacked
-import openglider.rs
-
-
-import svglib.svglib
-from PIL import Image
-from reportlab.graphics.shapes import Drawing, Group, Line, Path as ReportPath, PolyLine, Polygon
-
-
 import math
+import re
+import warnings
 from collections.abc import Iterable
-from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree
 
+import openglider.rs
+from PIL import Image
+
+from openglider.glider.texture.uv_map.mirrored import UVMapMirrored
+from openglider.glider.texture.uv_map.stacked import UVMapStacked
 from openglider.utils.dataclass import BaseModel
 
 class Texture(BaseModel):
@@ -29,8 +25,8 @@ class SVGTexture:
     def __init__(self, svg_data: str, dpi: int = 300):
         self.dpi = dpi
         self._svg_data = svg_data
+        self._svg_root = ElementTree.fromstring(svg_data)
         self.width, self.height = self._read_svg_size(self._svg_data)
-        self._drawing: Drawing | None = None
         self._normalized_vectors: list[openglider.rs.vector.PolyLine2D] | None = None
         self._raster: Image.Image | None = None
         self._raster_by_max_dim: dict[tuple[int, float], Image.Image] = {}
@@ -88,109 +84,249 @@ class SVGTexture:
 
         raise ValueError("svg file has no usable size information")
 
+    @staticmethod
+    def _compose_transform(
+        parent_transform: tuple[float, float, float, float, float, float],
+        child_transform: tuple[float, float, float, float, float, float],
+    ) -> tuple[float, float, float, float, float, float]:
+        a1, b1, c1, d1, e1, f1 = parent_transform
+        a2, b2, c2, d2, e2, f2 = child_transform
+        return (
+            a1 * a2 + c1 * b2,
+            b1 * a2 + d1 * b2,
+            a1 * c2 + c1 * d2,
+            b1 * c2 + d1 * d2,
+            a1 * e2 + c1 * f2 + e1,
+            b1 * e2 + d1 * f2 + f1,
+        )
+
+    @staticmethod
+    def _apply_transform(
+        point: tuple[float, float],
+        transform: tuple[float, float, float, float, float, float],
+    ) -> tuple[float, float]:
+        x, y = point
+        a, b, c, d, e, f = transform
+        return (a * x + c * y + e, b * x + d * y + f)
+
     def _normalize_point(self, x: float, y: float) -> tuple[float, float]:
-        u = 0.0 if self.width == 0 else x / self.width
-        v = 1.0 if self.height == 0 else 1.0 - y / self.height
+        min_x, min_y, width, height = self._svg_viewbox()
+        if width == 0 or height == 0:
+            return 0.0, 0.0
+        u = (x - min_x) / width
+        v = 1.0 - ((y - min_y) / height)
         return u, v
 
-    def _get_drawing(self) -> Drawing:
-        if self._drawing is None:
-            drawing = svglib.svglib.svg2rlg(BytesIO(self._svg_data.encode("utf-8")))  # type: ignore
-            if drawing is None:
-                raise ValueError("could not read svg file")
-            self._drawing = drawing
-        return self._drawing
+    def _svg_viewbox(self) -> tuple[float, float, float, float]:
+        root = self._svg_root
+        view_box = root.get("viewBox") or root.get("viewbox")
+        if view_box is None:
+            return 0.0, 0.0, self.width, self.height
 
-    def _walk_nodes(self, node: Drawing | Group) -> Iterable[object]:
-        if hasattr(node, "contents"):
-            for child in node.contents:
-                yield child
-                if isinstance(child, (Drawing, Group)):
-                    yield from self._walk_nodes(child)
+        parts = [part for part in view_box.replace(",", " ").split() if part]
+        if len(parts) != 4:
+            return 0.0, 0.0, self.width, self.height
 
-    def _extract_path_lines(self, path: ReportPath) -> list[openglider.rs.vector.PolyLine2D]:
-        lines: list[openglider.rs.vector.PolyLine2D] = []
-        if not path.points:
-            return lines
+        try:
+            min_x, min_y, width, height = [float(part) for part in parts]
+        except ValueError:
+            return 0.0, 0.0, self.width, self.height
 
-        points = path.points
-        operators = path.operators
+        return min_x, min_y, width, height
 
-        cursor = 0
-        current_line: list[tuple[float, float]] = []
-        first_point: tuple[float, float] | None = None
+    @staticmethod
+    def _local_name(tag: str) -> str:
+        return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
-        for op in operators:
-            if op == 0:
-                if len(current_line) >= 2:
-                    lines.append(openglider.rs.vector.PolyLine2D(current_line))
-                x = points[cursor]
-                y = points[cursor + 1]
-                cursor += 2
-                current_line = [self._normalize_point(x, y)]
-                first_point = current_line[0]
-            elif op == 1:
-                x = points[cursor]
-                y = points[cursor + 1]
-                cursor += 2
-                current_line.append(self._normalize_point(x, y))
-            elif op == 2:
-                if cursor + 5 < len(points):
-                    x = points[cursor + 4]
-                    y = points[cursor + 5]
-                    current_line.append(self._normalize_point(x, y))
-                cursor += 6
-            elif op == 3:
-                if first_point is not None:
-                    current_line.append(first_point)
-                if len(current_line) >= 2:
-                    lines.append(openglider.rs.vector.PolyLine2D(current_line))
-                current_line = []
-                first_point = None
+    @staticmethod
+    def _number_re() -> re.Pattern[str]:
+        return re.compile(r"[-+]?(?:\d*\.\d+|\d+\.\d*|\d+)(?:[eE][-+]?\d+)?")
 
-        if len(current_line) >= 2:
-            lines.append(openglider.rs.vector.PolyLine2D(current_line))
+    @classmethod
+    def _parse_transform_value(cls, value: str | None) -> tuple[float, float, float, float, float, float]:
+        if value is None or not value.strip():
+            return (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
-        return lines
+        matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+        matches = list(re.finditer(r"([A-Za-z]+)\s*\(([^)]*)\)", value))
+        for match in matches:
+            name = match.group(1).lower()
+            args = [float(token) for token in cls._number_re().findall(match.group(2))]
+            if name == "matrix" and len(args) == 6:
+                matrix = cls._compose_transform(matrix, (args[0], args[1], args[2], args[3], args[4], args[5]))
+            elif name == "translate" and len(args) >= 1:
+                tx = args[0]
+                ty = args[1] if len(args) > 1 else 0.0
+                matrix = cls._compose_transform(matrix, (1.0, 0.0, 0.0, 1.0, tx, ty))
+            elif name == "scale" and len(args) >= 1:
+                sx = args[0]
+                sy = args[1] if len(args) > 1 else sx
+                matrix = cls._compose_transform(matrix, (sx, 0.0, 0.0, sy, 0.0, 0.0))
+            elif name == "rotate" and len(args) >= 1:
+                angle = math.radians(args[0])
+                cos_a = math.cos(angle)
+                sin_a = math.sin(angle)
+                cx = args[1] if len(args) > 1 else 0.0
+                cy = args[2] if len(args) > 2 else 0.0
+                matrix = cls._compose_transform(
+                    matrix,
+                    (1.0, 0.0, 0.0, 1.0, cx, cy),
+                )
+                matrix = cls._compose_transform(
+                    matrix,
+                    (cos_a, sin_a, -sin_a, cos_a, 0.0, 0.0),
+                )
+                matrix = cls._compose_transform(
+                    matrix,
+                    (1.0, 0.0, 0.0, 1.0, -cx, -cy),
+                )
+            elif name == "skewx" and len(args) >= 1:
+                angle = math.radians(args[0])
+                matrix = cls._compose_transform(matrix, (1.0, 0.0, math.tan(angle), 1.0, 0.0, 0.0))
+            elif name == "skewy" and len(args) >= 1:
+                angle = math.radians(args[0])
+                matrix = cls._compose_transform(matrix, (1.0, math.tan(angle), 0.0, 1.0, 0.0, 0.0))
 
-    def _extract_vectors(self, drawing: Drawing) -> list[openglider.rs.vector.PolyLine2D]:
+        return matrix
+
+    def _iter_svg_paths(
+        self,
+        element: ElementTree.Element,
+        transform: tuple[float, float, float, float, float, float] = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+    ) -> Iterable[tuple[tuple[float, float, float, float, float, float], ElementTree.Element]]:
+        tag_name = self._local_name(element.tag)
+        local_transform = self._parse_transform_value(element.get("transform"))
+        current_transform = self._compose_transform(transform, local_transform)
+
+        if tag_name == "path":
+            yield current_transform, element
+
+        for child in list(element):
+            yield from self._iter_svg_paths(child, current_transform)
+
+    @staticmethod
+    def _path_has_curve_commands(path_data: str) -> bool:
+        letters = re.findall(r"[A-Za-z]", path_data)
+        unsupported = [letter for letter in letters if letter not in {"M", "m", "L", "l", "Z", "z"}]
+        return bool(unsupported)
+
+    @classmethod
+    def _parse_path_points(cls, path_data: str) -> list[list[tuple[float, float]]]:
+        tokens = re.findall(r"[A-Za-z]|[-+]?(?:\d*\.\d+|\d+\.\d*|\d+)(?:[eE][-+]?\d+)?", path_data)
+        if not tokens:
+            return []
+
+        subpaths: list[list[tuple[float, float]]] = []
+        current_path: list[tuple[float, float]] = []
+        current = (0.0, 0.0)
+        start = (0.0, 0.0)
+        command: str | None = None
+        index = 0
+
+        while index < len(tokens):
+            token = tokens[index]
+            if token in {"M", "m", "L", "l", "Z", "z"}:
+                if token in {"M", "m"}:
+                    if current_path:
+                        subpaths.append(current_path)
+                        current_path = []
+                    current = start
+                    command = token
+                    index += 1
+                    continue
+                if token in {"Z", "z"}:
+                    if current_path and current_path[0] != start:
+                        current_path.append(start)
+                    if current_path:
+                        subpaths.append(current_path)
+                    current_path = []
+                    current = start
+                    command = None
+                    index += 1
+                    continue
+                command = token
+                index += 1
+                continue
+
+            if command is None:
+                index += 1
+                continue
+
+            if index + 1 >= len(tokens):
+                break
+
+            x = float(tokens[index])
+            y = float(tokens[index + 1])
+            index += 2
+
+            if command in {"M", "m"}:
+                target = (x, y) if command == "M" else (current[0] + x, current[1] + y)
+                current = target
+                start = target
+                current_path = [target]
+            elif command in {"L", "l"}:
+                target = (x, y) if command == "L" else (current[0] + x, current[1] + y)
+                current = target
+                current_path.append(target)
+
+        if current_path:
+            subpaths.append(current_path)
+
+        return subpaths
+
+    def _extract_vectors(self, svg_root: ElementTree.Element) -> list[openglider.rs.vector.PolyLine2D]:
         vectors: list[openglider.rs.vector.PolyLine2D] = []
 
-        for node in self._walk_nodes(drawing):
-            if isinstance(node, Line):
-                p1 = self._normalize_point(float(node.x1), float(node.y1))
-                p2 = self._normalize_point(float(node.x2), float(node.y2))
-                vectors.append(openglider.rs.vector.PolyLine2D([p1, p2]))
-            elif isinstance(node, PolyLine):
-                points = [self._normalize_point(float(x), float(y)) for x, y in zip(node.points[0::2], node.points[1::2])]
-                if len(points) >= 2:
-                    vectors.append(openglider.rs.vector.PolyLine2D(points))
-            elif isinstance(node, Polygon):
-                points = [self._normalize_point(float(x), float(y)) for x, y in zip(node.points[0::2], node.points[1::2])]
-                if len(points) >= 2:
-                    points.append(points[0])
-                    vectors.append(openglider.rs.vector.PolyLine2D(points))
-            elif isinstance(node, ReportPath):
-                vectors.extend(self._extract_path_lines(node))
+        for transform, node in self._iter_svg_paths(svg_root):
+            if self._local_name(node.tag) != "path":
+                continue
+
+            path_data = node.get("d") or ""
+            if not path_data.strip():
+                continue
+
+            if self._path_has_curve_commands(path_data):
+                warnings.warn(f"Skipping SVG path with unsupported curve commands in path data: {path_data[:80]!r}")
+                continue
+
+            try:
+                subpaths = self._parse_path_points(path_data)
+            except ValueError as exc:
+                warnings.warn(f"Skipping malformed SVG path: {exc}")
+                continue
+
+            for points in subpaths:
+                if len(points) < 2:
+                    continue
+
+                transformed = [self._normalize_point(*self._apply_transform((x, y), transform)) for x, y in points]
+                vectors.append(openglider.rs.vector.PolyLine2D(transformed))
 
         return vectors
 
-    def get_vectors(self, bbox: tuple[float, float, float, float]) -> list[openglider.rs.vector.PolyLine2D]:
+    def get_vectors(self, bbox: tuple[openglider.rs.vector.Vector2D, openglider.rs.vector.Vector2D]) -> list[openglider.rs.vector.PolyLine2D]:
         """Return normalized SVG outlines remapped into the requested bbox.
 
         The ReportLab parse is performed lazily because this path is only needed
         for plotfile-style vector overlays, not for the raster texture pipeline.
         """
         if self._normalized_vectors is None:
-            self._normalized_vectors = self._extract_vectors(self._get_drawing())
+            self._normalized_vectors = self._extract_vectors(self._svg_root)
         return [self._map_to_bbox(polyline, bbox) for polyline in self._normalized_vectors]
 
     def _map_to_bbox(
         self,
         polyline: openglider.rs.vector.PolyLine2D,
-        bbox: tuple[float, float, float, float],
+        bbox: tuple[openglider.rs.vector.Vector2D, openglider.rs.vector.Vector2D] | tuple[float, float, float, float],
     ) -> openglider.rs.vector.PolyLine2D:
-        min_x, max_x, min_y, max_y = bbox
+        if len(bbox) == 4 and all(isinstance(v, (int, float)) for v in bbox):
+            x0, x1, y0, y1 = bbox
+            min_x, max_x = sorted((x0, x1))
+            min_y, max_y = sorted((y0, y1))
+        else:
+            min_x, min_y = bbox[0]
+            max_x, max_y = bbox[1]
+
         width = max(max_x - min_x, 1e-9)
         height = max(max_y - min_y, 1e-9)
 

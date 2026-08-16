@@ -236,7 +236,6 @@ class _UVMapBase:
 
         layout = Layout()
         layout.parts.append(PlotPart(marks=points))
-        layout = layout.scale(100)
         return layout
 
     def _texture_point_from_panel_local(

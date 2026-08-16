@@ -442,6 +442,61 @@ fn polyline2d_contains(nodes: &[Vector2D], point: Vector2D) -> bool {
     inside
 }
 
+fn polyline2d_clip_inside_outline(line_nodes: &[Vector2D], outline_nodes: &[Vector2D]) -> Vec<PolyLine2D> {
+    const TOLERANCE: f64 = 1e-5;
+
+    let mut result = Vec::new();
+    if line_nodes.len() < 2 || outline_nodes.len() < 3 {
+        return result;
+    }
+
+    let closed_outline = if outline_nodes.first() != outline_nodes.last() {
+        let mut nodes = outline_nodes.to_vec();
+        nodes.push(*outline_nodes.first().unwrap());
+        nodes
+    } else {
+        outline_nodes.to_vec()
+    };
+
+    let mut cut_positions: Vec<f64> = polyline2d_cut_polyline(line_nodes, &closed_outline)
+        .into_iter()
+        .map(|(ik, _)| ik)
+        .filter(|ik| -TOLERANCE <= *ik && *ik <= line_nodes.len() as f64 - 1.0 + TOLERANCE)
+        .collect();
+    cut_positions.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut positions = Vec::with_capacity(cut_positions.len() + 2);
+    positions.push(0.0);
+    for position in cut_positions {
+        if positions.last().copied().map_or(true, |last| (position - last).abs() > TOLERANCE) {
+            positions.push(position);
+        }
+    }
+
+    let end_position = line_nodes.len() as f64 - 1.0;
+    if positions.last().copied().map_or(true, |last| (end_position - last).abs() > TOLERANCE) {
+        positions.push(end_position);
+    }
+
+    for window in positions.windows(2) {
+        let start = window[0];
+        let end = window[1];
+        if end - start <= TOLERANCE {
+            continue;
+        }
+
+        let middle = (start + end) / 2.0;
+        if polyline2d_contains(&closed_outline, polyline_get(line_nodes, middle)) {
+            let nodes = polyline2d_subcurve(line_nodes, start, end);
+            if nodes.len() > 1 {
+                result.push(PolyLine2D { nodes });
+            }
+        }
+    }
+
+    result
+}
+
 fn polyline2d_subcurve(nodes: &[Vector2D], start: f64, end: f64) -> Vec<Vector2D> {
     polyline_get_positions(nodes.len(), start, end)
         .into_iter()
@@ -882,6 +937,16 @@ impl PolyLine2D {
     fn bool_intersection(&self, other: &PolyLine2D) -> Vec<PolyLine2D> {
         type Cut = (f64, f64);
 
+        let self_closed = self.nodes.len() > 2 && self.nodes.first() == self.nodes.last();
+        let other_closed = other.nodes.len() > 2 && other.nodes.first() == other.nodes.last();
+        if self_closed ^ other_closed {
+            if self_closed {
+                return polyline2d_clip_inside_outline(&other.nodes, &self.nodes);
+            }
+
+            return polyline2d_clip_inside_outline(&self.nodes, &other.nodes);
+        }
+
         let mut result: Vec<PolyLine2D> = Vec::new();
 
         let first = self.close();
@@ -976,6 +1041,11 @@ impl PolyLine2D {
         // TODO: apply real name
         self.bool_intersection(other)
     }
+
+    fn clip(&self, outline: &PolyLine2D) -> Vec<PolyLine2D> {
+        polyline2d_clip_inside_outline(&self.nodes, &outline.nodes)
+    }
+
     fn fix_errors(&self) -> Self {
         Self {
             nodes: polyline2d_fix_errors(&self.nodes),

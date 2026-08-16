@@ -27,7 +27,8 @@ class TestPolyline(unittest.TestCase):
         ])
 
     def test_union(self):
-        _union = self.p1.bool_union(self.p2)
+        union = self.p1.bool_union(self.p2)
+        self.assertGreaterEqual(len(union), 1)
 
     def test_bool_intersection_area(self):
         left = openglider.rs.vector.PolyLine2D([
@@ -50,7 +51,7 @@ class TestPolyline(unittest.TestCase):
         self.assertEqual(len(intersections), 1)
         self.assertAlmostEqual(intersections[0].get_area(), 1.0, places=6)
 
-    def test_bool_union_alias_matches_intersection(self):
+    def test_bool_union_area(self):
         left = openglider.rs.vector.PolyLine2D([
             [0.0, 0.0],
             [2.0, 0.0],
@@ -66,15 +67,84 @@ class TestPolyline(unittest.TestCase):
             [1.0, 1.0],
         ])
 
-        by_union_name = left.bool_union(right)
-        by_intersection_name = left.bool_intersection(right)
+        union = left.bool_union(right)
 
-        self.assertEqual(len(by_union_name), len(by_intersection_name))
-        self.assertAlmostEqual(
-            sum(poly.get_area() for poly in by_union_name),
-            sum(poly.get_area() for poly in by_intersection_name),
-            places=6,
-        )
+        self.assertEqual(len(union), 1)
+        self.assertAlmostEqual(sum(poly.get_area() for poly in union), 7.0, places=6)
+
+    def test_bool_intersection_clips_open_polyline(self):
+        polygon = openglider.rs.vector.PolyLine2D([
+            [0.0, 0.0],
+            [2.0, 0.0],
+            [2.0, 2.0],
+            [0.0, 2.0],
+            [0.0, 0.0],
+        ])
+        path = openglider.rs.vector.PolyLine2D([
+            [-1.0, 1.0],
+            [1.0, 1.0],
+            [3.0, 1.0],
+        ])
+
+        clipped = polygon.bool_intersection(path)
+
+        self.assertEqual(len(clipped), 1)
+        points = list(clipped[0])
+        self.assertEqual(len(points), 3)
+        self.assertAlmostEqual(points[0][0], 0.0, places=6)
+        self.assertAlmostEqual(points[0][1], 1.0, places=6)
+        self.assertAlmostEqual(points[1][0], 1.0, places=6)
+        self.assertAlmostEqual(points[1][1], 1.0, places=6)
+        self.assertAlmostEqual(points[2][0], 2.0, places=6)
+        self.assertAlmostEqual(points[2][1], 1.0, places=6)
+
+    def test_clip_by_closed_outline(self):
+        polygon = openglider.rs.vector.PolyLine2D([
+            [0.0, 0.0],
+            [2.0, 0.0],
+            [2.0, 2.0],
+            [0.0, 2.0],
+            [0.0, 0.0],
+        ])
+        path = openglider.rs.vector.PolyLine2D([
+            [-1.0, 1.0],
+            [1.0, 1.0],
+            [3.0, 1.0],
+        ])
+
+        clipped = path.clip(polygon)
+
+        self.assertEqual(len(clipped), 1)
+        points = list(clipped[0])
+        self.assertEqual(len(points), 3)
+        self.assertAlmostEqual(points[0][0], 0.0, places=6)
+        self.assertAlmostEqual(points[0][1], 1.0, places=6)
+        self.assertAlmostEqual(points[1][0], 1.0, places=6)
+        self.assertAlmostEqual(points[1][1], 1.0, places=6)
+        self.assertAlmostEqual(points[2][0], 2.0, places=6)
+        self.assertAlmostEqual(points[2][1], 1.0, places=6)
+
+    def test_clip_by_open_outline_quad(self):
+        polygon = openglider.rs.vector.PolyLine2D([
+            [0.0, 0.0],
+            [2.0, 0.0],
+            [2.0, 2.0],
+            [0.0, 2.0],
+        ])
+        path = openglider.rs.vector.PolyLine2D([
+            [-1.0, 1.0],
+            [1.0, 1.0],
+            [3.0, 1.0],
+        ])
+
+        clipped = path.clip(polygon)
+
+        self.assertEqual(len(clipped), 1)
+        points = list(clipped[0])
+        self.assertEqual(len(points), 3)
+        self.assertAlmostEqual(points[0][0], 0.0, places=6)
+        self.assertAlmostEqual(points[1][0], 1.0, places=6)
+        self.assertAlmostEqual(points[2][0], 2.0, places=6)
 
     def test_area_is_positive_for_reversed_winding(self):
         forward = openglider.rs.vector.PolyLine2D([

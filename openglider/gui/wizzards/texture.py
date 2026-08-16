@@ -659,6 +659,7 @@ class TextureWizard(Wizard):
         try:
             uv_map = self._get_uv_map(self.project.get_glider_3d(), self._texture_widget.uv_mode)
             layout = uv_map.get_layout()
+            layout = layout.scale(1000)
             layout.export_svg(filename, border=0.0)
         except Exception:
             logger.exception("Failed to export UV map SVG")
