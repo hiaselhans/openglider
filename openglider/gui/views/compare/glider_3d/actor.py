@@ -7,7 +7,7 @@ import openglider.rs
 from openglider.glider.glider import Glider
 from openglider.glider.project import GliderProject
 from openglider.glider.texture.uv_map import UVMapMode
-from openglider.gui.views.compare.glider_3d.config import GliderViewConfig
+from openglider.gui.views.compare.glider_3d.config import GliderViewConfig, get_riser_indices
 from openglider.gui.views_3d.widgets import View3D
 
 
@@ -111,11 +111,32 @@ class GliderActors:
 
         return openglider.rs.wgpu.MeshActor(ribs_mesh, draw_edges=True, boundary_only=True)
 
-    def get_lines(self, numpoints: int = 3) -> openglider.rs.wgpu.MeshActor:
+    def get_lines(
+        self,
+        numpoints: int = 3,
+        riser: str | int = "all",
+    ) -> openglider.rs.wgpu.MeshActor:
         if self.glider_3d is None:
             raise ValueError("Glider3D not set")
 
-        mesh_lineset = self.glider_3d.lineset.get_mesh(numpoints=numpoints)
+        lowest_lines = self.glider_3d.lineset.lowest_lines
+        regular, brake = get_riser_indices(
+            [line.lower_node.name for line in lowest_lines],
+            self.project.glider.config.brake_name,
+        )
+        if riser == "all":
+            riser_index = None
+        elif riser == "brake":
+            riser_index = brake if brake is not None else len(lowest_lines)
+        elif isinstance(riser, int) and 0 <= riser < len(regular):
+            riser_index = regular[riser]
+        else:
+            riser_index = len(lowest_lines)
+
+        mesh_lineset = self.glider_3d.lineset.get_mesh(
+            numpoints=numpoints,
+            riser_index=riser_index,
+        )
         mesh = mesh_lineset + mesh_lineset.copy().mirror("y")
         return openglider.rs.wgpu.MeshActor(mesh)
 
@@ -187,15 +208,27 @@ class GliderActors:
             self.actors = {
                 "panels": self.get_panels_textured(config.numribs, config),
                 "ribs": self.get_ribs(config.hole_numpoints),
-                "lines": self.get_lines(config.line_numpoints),
+                "lines": self.get_lines(
+                    config.line_numpoints,
+                    config.line_riser,
+                ),
                 "diagonals": self.get_diagonals(config.hole_numpoints, config.numribs),
                 "straps": self.get_straps(config.numribs),
                 "miniribs": self.get_miniribs(),
             }
             self._panel_texture_key = texture_key
-        elif self._panel_texture_key != texture_key:
-            self.actors["panels"] = self.get_panels_textured(config.numribs, config)
-            self._panel_texture_key = texture_key
+        else:
+            if self.config is not None and (
+                config.line_numpoints != self.config.line_numpoints
+                or config.line_riser != self.config.line_riser
+            ):
+                self.actors["lines"] = self.get_lines(
+                    config.line_numpoints,
+                    config.line_riser,
+                )
+            if self._panel_texture_key != texture_key:
+                self.actors["panels"] = self.get_panels_textured(config.numribs, config)
+                self._panel_texture_key = texture_key
 
         for name in config.get_active_keys():
             view_3d.show_actor(self.actors[name])

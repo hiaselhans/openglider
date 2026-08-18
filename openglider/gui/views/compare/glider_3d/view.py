@@ -12,7 +12,7 @@ from openglider.gui.state.glider_list import GliderCache
 from openglider.gui.views.compare.base import CompareView
 from openglider.gui.views.compare.glider_3d.actor import GliderActors
 from openglider.gui.views.compare.glider_3d.config import \
-    GliderViewConfigWidget
+    GliderViewConfigWidget, get_riser_indices
 from openglider.gui.views_3d.widgets import View3D
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,6 @@ class DropView3D(View3D):
         self.render_widget._interactor.camera.yaw = -math.pi * 3 / 4
         self.render_widget._interactor.camera.pitch = 0.3
         self.render_widget._interactor.camera.distance = 10.0
-        self.render_widget._interactor.camera.target_z = -2
 
 
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
@@ -111,6 +110,20 @@ class Glider3DView(QtWidgets.QWidget, CompareView):
         self.view_3d.clear()
         expect_value(self.layout()).addWidget(self.view_3d)
 
+    def update_line_riser_options(self) -> bool:
+        regular_riser_count = 0
+        has_brake = False
+        for project in self.app.state.projects.get_active():
+            lineset = project.get_glider_3d().lineset
+            regular, brake = get_riser_indices(
+                [line.lower_node.name for line in lineset.lowest_lines],
+                project.glider.config.brake_name,
+            )
+            regular_riser_count = max(regular_riser_count, len(regular))
+            has_brake |= brake is not None
+
+        return self.config.update_line_riser_options(regular_riser_count, has_brake)
+
     def import_obj(self, filename: str) -> None:
         try:
             mesh = Mesh.from_obj(filename)
@@ -135,6 +148,7 @@ class Glider3DView(QtWidgets.QWidget, CompareView):
         self.view_3d.rerender()
     
     def update_config(self) -> None:
+        self.update_line_riser_options()
         self.view_3d.clear()
         changeset = self.actor_cache.get_update()
         for actor in changeset.active:
@@ -144,6 +158,7 @@ class Glider3DView(QtWidgets.QWidget, CompareView):
             self.view_3d.show_actor(self.imported_mesh_actor)
 
     def update_view(self) -> None:
+        filter_changed = self.update_line_riser_options()
         changeset = self.actor_cache.get_update()
 
         for actor in changeset.removed:
@@ -151,6 +166,11 @@ class Glider3DView(QtWidgets.QWidget, CompareView):
 
         for actor in changeset.added:
             actor.add(self.view_3d, self.config.config)
+
+        if filter_changed:
+            for actor in changeset.active:
+                if actor not in changeset.added:
+                    actor.update(self.view_3d, self.config.config)
         
         self.view_3d.rerender()
 

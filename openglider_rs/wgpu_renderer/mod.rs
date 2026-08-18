@@ -17,7 +17,7 @@ use x11_dl::xlib;
 mod camera;
 mod geometry;
 
-use camera::{matrix_to_uniform, ProjectionMode};
+use camera::{matrix_to_uniform, ProjectionMode, PERSPECTIVE_FOV_Y};
 use geometry::mesh_to_vertices;
 
 use crate::mesh::{Mesh, MeshTexture};
@@ -255,6 +255,7 @@ fn make_native_handles(platform: &str, window_id: u64, display_id: Option<u64>) 
 }
 
 const SHADER_SOURCE: &str = include_str!("shader.wgsl");
+const CAMERA_FIT_PADDING: f32 = 1.05;
 
 struct MeshData {
     fill_vertex_buffer: wgpu::Buffer,
@@ -277,6 +278,7 @@ struct CachedActor {
     all_edges: MeshData,
     boundary_edges: MeshData,
     texture: Option<TextureResources>,
+    bounds: Option<([f32; 3], [f32; 3])>,
     current_mode: EdgeMode,
     visible: bool,
 }
@@ -306,6 +308,19 @@ impl CachedActor {
     }
 }
 
+fn mesh_bounds(mesh: &Mesh) -> Option<([f32; 3], [f32; 3])> {
+    let first = mesh.points.first()?;
+    let mut min = [first.x as f32, first.y as f32, first.z as f32];
+    let mut max = min;
+    for point in &mesh.points[1..] {
+        for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
+            min[axis] = min[axis].min(value as f32);
+            max[axis] = max[axis].max(value as f32);
+        }
+    }
+    Some((min, max))
+}
+
 static ACTOR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Pre-computed mesh actor: holds CPU-side vertex data for all edge variants.
@@ -318,6 +333,7 @@ pub struct MeshActor {
     all_poly_edges: Vec<Vertex>,
     boundary_poly_edges: Vec<Vertex>,
     texture: Option<TextureData>,
+    bounds: Option<([f32; 3], [f32; 3])>,
     draw_edges: bool,
     boundary_only: bool,
 }
@@ -336,6 +352,7 @@ impl MeshActor {
             height: texture.height,
             rgba: texture.rgba.clone(),
         });
+        let bounds = mesh_bounds(&mesh);
         MeshActor {
             id,
             fill,
@@ -343,6 +360,7 @@ impl MeshActor {
             all_poly_edges: all_poly,
             boundary_poly_edges: boundary_poly,
             texture,
+            bounds,
             draw_edges,
             boundary_only,
         }
@@ -845,7 +863,7 @@ impl RendererState {
                 // clip close geometry too early.
                 let near = (zoom_distance * 0.001).clamp(0.0001, 0.1);
                 let far = (zoom_distance * 4000.0).max(20_000.0);
-                Perspective3::new(aspect, 45f32.to_radians(), near, far).to_homogeneous()
+                Perspective3::new(aspect, PERSPECTIVE_FOV_Y, near, far).to_homogeneous()
             }
             ProjectionMode::Orthographic => {
                 // Ortho zoom is controlled by half extents, not camera motion.
@@ -885,6 +903,75 @@ impl RendererState {
         self.projection_mode = ProjectionMode::from_str(mode)?;
         self.update_camera();
         Ok(())
+    }
+
+    fn fit_camera(&mut self) -> Option<(f32, f32, f32, f32)> {
+        let mut bounds: Option<([f32; 3], [f32; 3])> = None;
+        for actor in self.actors.iter().filter(|(_, actor)| actor.visible) {
+            let Some((actor_min, actor_max)) = actor.1.bounds else {
+                continue;
+            };
+            match &mut bounds {
+                Some((min, max)) => {
+                    for axis in 0..3 {
+                        min[axis] = min[axis].min(actor_min[axis]);
+                        max[axis] = max[axis].max(actor_max[axis]);
+                    }
+                }
+                None => bounds = Some((actor_min, actor_max)),
+            }
+        }
+        let (min, max) = bounds?;
+        let center = Vector3::new(
+            (min[0] + max[0]) * 0.5,
+            (min[1] + max[1]) * 0.5,
+            (min[2] + max[2]) * 0.5,
+        );
+
+        let yaw = self.camera.yaw;
+        let pitch = self.camera.pitch;
+        let eye_direction = Vector3::new(
+            pitch.cos() * yaw.cos(),
+            pitch.cos() * yaw.sin(),
+            pitch.sin(),
+        );
+        let forward = -eye_direction;
+        let right = Vector3::new(-yaw.sin(), yaw.cos(), 0.0);
+        let up = right.cross(&forward).normalize();
+        let aspect = self.config.width.max(1) as f32 / self.config.height.max(1) as f32;
+        let mut half_width: f32 = 0.0;
+        let mut half_height: f32 = 0.0;
+        let mut perspective_distance: f32 = 0.0;
+        let tan_half_fov = (PERSPECTIVE_FOV_Y * 0.5).tan();
+
+        for x in [min[0], max[0]] {
+            for y in [min[1], max[1]] {
+                for z in [min[2], max[2]] {
+                    let offset = Vector3::new(x, y, z) - center;
+                    let screen_x = offset.dot(&right).abs();
+                    let screen_y = offset.dot(&up).abs();
+                    half_width = half_width.max(screen_x);
+                    half_height = half_height.max(screen_y);
+                    perspective_distance = perspective_distance.max(
+                        offset.dot(&eye_direction)
+                            + CAMERA_FIT_PADDING
+                                * (screen_y / tan_half_fov)
+                                    .max(screen_x / (tan_half_fov * aspect)),
+                    );
+                }
+            }
+        }
+
+        self.camera.target = [center.x, center.y, center.z];
+        self.camera.distance = match self.projection_mode {
+            ProjectionMode::Orthographic => {
+                2.0 * CAMERA_FIT_PADDING * half_height.max(half_width / aspect)
+            }
+            ProjectionMode::Perspective => perspective_distance,
+        }
+        .max(0.1);
+        self.update_camera();
+        Some((center.x, center.y, center.z, self.camera.distance))
     }
 
     fn set_color_bounds(&mut self, min_val: f32, max_val: f32) {
@@ -958,6 +1045,7 @@ impl RendererState {
                     rgba: t.rgba.clone(),
                 })
             }),
+            bounds: mesh_bounds(mesh),
             current_mode: EdgeMode::NoEdges,
             visible: true,
         };
@@ -1012,6 +1100,7 @@ impl RendererState {
             all_edges,
             boundary_edges,
             texture: actor.texture.as_ref().and_then(|t| self.create_texture_resources(t)),
+            bounds: actor.bounds,
             current_mode: EdgeMode::NoEdges,
             visible: true,
         };
@@ -1191,6 +1280,10 @@ impl NativeWgpuRenderer {
             };
             state.update_camera();
         }
+    }
+
+    fn fit_camera(&mut self) -> Option<(f32, f32, f32, f32)> {
+        self.state.as_mut().and_then(RendererState::fit_camera)
     }
 
     fn render(&mut self) -> PyResult<()> {

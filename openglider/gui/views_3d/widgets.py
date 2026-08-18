@@ -53,6 +53,9 @@ class WgpuRenderWidget(QtWidgets.QWidget):
         self._render_timer = QtCore.QTimer(self)
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self._render_now)
+        self._rotation_timer = QtCore.QTimer(self)
+        self._rotation_timer.setInterval(33)  # approximately 30 FPS
+        self._rotation_timer.timeout.connect(self._update_rotation)
 
     def shutdown(self) -> None:
         """Deterministically release native renderer resources before app exit."""
@@ -62,6 +65,7 @@ class WgpuRenderWidget(QtWidgets.QWidget):
         self._is_closing = True
         self._activate_timer.stop()
         self._render_timer.stop()
+        self._rotation_timer.stop()
 
         # Prevent any late input callbacks during destruction.
         self._container.removeEventFilter(self)
@@ -146,6 +150,7 @@ class WgpuRenderWidget(QtWidgets.QWidget):
             display_id,
         )
         self._apply_camera()
+        self._apply_projection()
         return self._renderer
 
     def _apply_camera(self) -> None:
@@ -161,6 +166,15 @@ class WgpuRenderWidget(QtWidgets.QWidget):
             float(camera.target_y),
             float(camera.target_z),
         )
+
+    def _apply_projection(self) -> None:
+        if self._renderer is not None:
+            self._renderer.set_projection(self._interactor.projection_mode)
+
+    def _update_rotation(self) -> None:
+        if self._interactor.update_rotation():
+            self._apply_camera()
+            self._request_render()
 
     def _request_render(self) -> None:
         if self._is_closing or self._render_scheduled:
@@ -271,6 +285,25 @@ class WgpuRenderWidget(QtWidgets.QWidget):
         _ = event
         self._request_render()
 
+    def _handle_key_event(self, event: QtGui.QKeyEvent) -> bool:
+        if not self._interactor.handle_key(event.text()):
+            return False
+
+        self._apply_camera()
+        self._apply_projection()
+        if event.text() in {"1", "2", "3", "4"} and self._renderer is not None:
+            fitted_camera = self._renderer.fit_camera()
+            if fitted_camera is not None:
+                camera = self._interactor.camera
+                camera.target_x, camera.target_y, camera.target_z, camera.distance = fitted_camera
+        if self._interactor.is_rotating:
+            self._rotation_timer.start()
+        else:
+            self._rotation_timer.stop()
+        self._request_render()
+        event.accept()
+        return True
+
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
         if watched in (self._container, self._surface) and not self._is_closing:
             event_type = event.type()
@@ -290,8 +323,16 @@ class WgpuRenderWidget(QtWidgets.QWidget):
                     self._apply_camera()
                     self._request_render()
                 return False
+            if event_type == QtCore.QEvent.Type.KeyPress and isinstance(event, QtGui.QKeyEvent):
+                if self._handle_key_event(event):
+                    return True
 
         return super().eventFilter(watched, event)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if not self._is_closing and self._handle_key_event(event):
+            return
+        super().keyPressEvent(event)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if self._is_closing:

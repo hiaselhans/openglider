@@ -3,6 +3,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 pub(crate) type MvpUniform = [[f32; 4]; 4];
+pub(crate) const PERSPECTIVE_FOV_Y: f32 = 45.0_f32.to_radians();
 
 #[derive(Clone, Copy)]
 pub(crate) enum ProjectionMode {

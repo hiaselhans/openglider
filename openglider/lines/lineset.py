@@ -251,8 +251,16 @@ class LineSet:
             strength_list.append(strength)
         return strength_list
 
-    def get_mesh(self, numpoints: int=10, main_lines_only: bool=False, line_segment_length: float | None=None) -> Mesh:
-        if main_lines_only:
+    def get_mesh(
+        self,
+        numpoints: int=10,
+        main_lines_only: bool=False,
+        line_segment_length: float | None=None,
+        riser_index: int | None=None,
+    ) -> Mesh:
+        if riser_index is not None and riser_index >= 0:
+            lines = self.get_lines_for_riser(riser_index)
+        elif main_lines_only:
             lines = self.get_upper_lines(self.get_main_attachment_point())
         else:
             lines = self.lines
@@ -260,6 +268,14 @@ class LineSet:
         for line in lines:
             mesh += line.get_mesh(numpoints, segment_length=line_segment_length)
         return mesh
+
+    def get_lines_for_riser(self, riser_index: int) -> list[Line]:
+        lower_lines = self.lowest_lines
+        if riser_index < 0 or riser_index >= len(lower_lines):
+            return []
+
+        lower_line = lower_lines[riser_index]
+        return [lower_line] + self.get_upper_lines(lower_line.upper_node)
 
     def get_upper_line_mesh(self, numpoints: int=1, breaks: bool=False) -> Mesh:
         mesh = Mesh()

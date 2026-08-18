@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Literal
 
 from openglider.gui.qt import QtCore, QtGui
+
+
+ProjectionMode = Literal["orthographic", "perspective"]
 
 
 @dataclass
@@ -25,6 +29,9 @@ class OrbitInteractor:
 
     def __init__(self) -> None:
         self.camera = OrbitCameraState()
+        self.projection_mode: ProjectionMode = "orthographic"
+        self.is_rotating = False
+        self.rotation_speed = math.radians(1.0)
         self._last_pos: QtCore.QPointF | None = None
 
     def begin_drag(self, event: QtGui.QMouseEvent) -> None:
@@ -71,6 +78,32 @@ class OrbitInteractor:
     def zoom(self, angle_delta_y: int) -> bool:
         factor = math.exp(-angle_delta_y / 960.0)
         self.camera.distance = max(0.05, self.camera.distance * factor)
+        return True
+
+    def handle_key(self, key: str) -> bool:
+        """Apply a viewport hotkey and report whether it was handled."""
+        views = {
+            "1": (math.pi, 0.0),
+            "2": (0.0, -1.54),
+            "3": (-math.pi / 2, 0.0),
+            "4": (0.0, 1.54),
+        }
+        if key in views:
+            self.camera.yaw, self.camera.pitch = views[key]
+        elif key == "5":
+            self.projection_mode = (
+                "orthographic" if self.projection_mode == "perspective" else "perspective"
+            )
+        elif key == "0":
+            self.is_rotating = not self.is_rotating
+        else:
+            return False
+        return True
+
+    def update_rotation(self) -> bool:
+        if not self.is_rotating:
+            return False
+        self.camera.yaw = (self.camera.yaw + self.rotation_speed) % (2 * math.pi)
         return True
 
     def _pan(self, dx: float, dy: float) -> None:
