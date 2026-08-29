@@ -314,6 +314,12 @@ class SVGTexture:
             self._normalized_vectors = self._extract_vectors(self._svg_root)
         return [self._map_to_bbox(polyline, bbox) for polyline in self._normalized_vectors]
 
+    def get_normalized_vectors(self) -> list[openglider.rs.vector.PolyLine2D]:
+        """Return SVG outlines in normalized texture space (u/v in [0, 1])."""
+        if self._normalized_vectors is None:
+            self._normalized_vectors = self._extract_vectors(self._svg_root)
+        return [polyline.copy() for polyline in self._normalized_vectors]
+
     def _map_to_bbox(
         self,
         polyline: openglider.rs.vector.PolyLine2D,

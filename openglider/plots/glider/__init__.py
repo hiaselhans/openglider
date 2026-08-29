@@ -16,6 +16,7 @@ from openglider.plots.glider.minirib import MiniRibPlot
 from openglider.plots.config import PatternConfig
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.vector.drawing.part import PlotPart
+from openglider.vector.mapping import Quad
 from openglider.vector.unit import Length
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,111 @@ class PlotMaker:
 
         return self._cellplotmakers[cell]
 
+    @staticmethod
+    def _map_point_from_quad(
+        point: tuple[float, float],
+        src_quad: Quad,
+        dst_quad: Quad,
+    ) -> tuple[float, float] | None:
+        try:
+            l, m = src_quad.to_local(openglider.rs.vector.Vector2D([point[0], point[1]]))
+            mapped = dst_quad.to_global(l, m)
+        except (ValueError, ZeroDivisionError, OverflowError):
+            return None
+
+        return float(mapped[0]), float(mapped[1])
+
+    def _get_texture_panel_marks(self) -> list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]]:
+        texture_obj = self.glider_3d.texture
+        result: list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]] = [dict() for _ in self.glider_3d.cells]
+        if texture_obj is None:
+            return result
+
+        texture_bbox = texture_obj.uv_map._get_texture_bbox()
+        texture_vectors = texture_obj.texture.get_vectors(
+            (
+                (texture_bbox[0], texture_bbox[2]),
+                (texture_bbox[1], texture_bbox[3]),
+            )
+        )
+        if not texture_vectors:
+            return result
+
+        uv_map = texture_obj.uv_map
+
+        def snap_to_panel_boundary(point: tuple[float, float], panel: Panel) -> tuple[float, float]:
+            x, y = point
+            y = min(max(y, 0.0), 1.0)
+
+            front = float(panel.cut_front.x_left) + y * (float(panel.cut_front.x_right) - float(panel.cut_front.x_left))
+            back = float(panel.cut_back.x_left) + y * (float(panel.cut_back.x_right) - float(panel.cut_back.x_left))
+
+            distances = (
+                (abs(y - 0.0), "span_left"),
+                (abs(y - 1.0), "span_right"),
+                (abs(x - front), "front"),
+                (abs(x - back), "back"),
+            )
+
+            min_dist, edge = min(distances, key=lambda item: item[0])
+            if min_dist > 5e-3:
+                return x, y
+
+            if edge == "span_left":
+                return x, 0.0
+            if edge == "span_right":
+                return x, 1.0
+            if edge == "front":
+                return front, y
+
+            return back, y
+
+        for cell_no, cell in enumerate(self.glider_3d.cells):
+            pm = self._get_cellplotmaker(cell)
+            for panel in cell.panels:
+                panel_poly = uv_map.get_panel_polygon(cell_no, panel)
+                if len(panel_poly) != 4:
+                    continue
+
+                src_quad = Quad(
+                    *panel_poly.nodes
+                )
+                dst_quad = Quad(
+                    openglider.rs.vector.Vector2D([float(panel.cut_back.x_left), 0.0]),
+                    openglider.rs.vector.Vector2D([float(panel.cut_back.x_right), 1.0]),
+                    openglider.rs.vector.Vector2D([float(panel.cut_front.x_right), 1.0]),
+                    openglider.rs.vector.Vector2D([float(panel.cut_front.x_left), 0.0]),
+                )
+
+                projected_lines: list[openglider.rs.vector.PolyLine2D] = []
+
+                for texture_line in texture_vectors:
+                    clipped_segments = texture_line.clip(panel_poly)
+                    if not clipped_segments:
+                        continue
+
+                    for clipped in clipped_segments:
+                        mapped_points: list[tuple[float, float]] = []
+                        for p in clipped:
+                            mapped = self._map_point_from_quad((float(p[0]), float(p[1])), src_quad, dst_quad)
+                            if mapped is not None:
+                                mapped_points.append(mapped)
+
+                        if len(mapped_points) < 2:
+                            continue
+
+                        mapped_points[0] = snap_to_panel_boundary(mapped_points[0], panel)
+                        mapped_points[-1] = snap_to_panel_boundary(mapped_points[-1], panel)
+
+                        projected = pm.panel_plots[panel].get_curve(openglider.rs.vector.PolyLine2D(mapped_points))
+                        if projected is not None and len(projected) >= 2:
+                            projected_lines.append(projected)
+
+                if projected_lines:
+                    result[cell_no][panel] = projected_lines
+
+        return result
+
     def get_panels(self, extra_marks: list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]] | None = None) -> Layout:
         self.panels.clear()
         panels_upper: list[Layout | PlotPart] = []
@@ -90,10 +196,22 @@ class PlotMaker:
 
         weight = MaterialUsage()
 
+        texture_marks = self._get_texture_panel_marks()
+
         for cell_no, cell in enumerate(self.glider_3d.cells):
             logger.info(f"Plotting Cell: {cell_no}")
             pm = self._get_cellplotmaker(cell)
-            _extra_marks = extra_marks[cell_no] if extra_marks is not None else None
+            merged_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] = {}
+
+            if cell_no < len(texture_marks) and texture_marks[cell_no]:
+                merged_marks.update(texture_marks[cell_no])
+
+            if extra_marks is not None and cell_no < len(extra_marks) and extra_marks[cell_no]:
+                for panel, marks in extra_marks[cell_no].items():
+                    merged_marks.setdefault(panel, [])
+                    merged_marks[panel] += marks
+
+            _extra_marks = merged_marks if merged_marks else None
             lower = pm.get_panels_lower(extra_marks=_extra_marks)
             upper = pm.get_panels_upper(extra_marks=_extra_marks)
             panels_lower.append(Layout.stack_column(lower, self.config.patterns_align_dist_y))

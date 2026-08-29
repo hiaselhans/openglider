@@ -406,6 +406,46 @@ class PanelPlot:
         
         return None
 
+    def get_area_point(self, x: float, y: float) -> openglider.rs.vector.Vector2D | None:
+        assert self.flattened_panel is not None, "Call prepare() before draw_point()"
+
+        # Texture-projected lines can land numerically on panel limits.
+        # Keep y within the valid span and nudge exact borders inward.
+        y_safe = min(max(float(y), 0.0), 1.0)
+        if y_safe <= 0.0:
+            y_safe = 1e-9
+        elif y_safe >= 1.0:
+            y_safe = 1.0 - 1e-9
+
+        if x > max(self.panel.cut_back.x_left, self.panel.cut_back.x_right):
+            return None
+        if x < min(self.panel.cut_front.x_left, self.panel.cut_front.x_right):
+            return None
+
+        try:
+            ik_min = self.flattened_panel.cut_front.get_inner_index(y_safe)
+            ik_max = self.flattened_panel.cut_back.get_inner_index(y_safe)
+        except ValueError:
+            return None
+
+        ik = get_x_value(self.x_values, x)
+
+        if ik_min <= ik <= ik_max:
+            line = self.cell.get_flattened_cell().at_position(Percentage(y_safe))
+            return line.get(ik)
+        
+        return None
+
+    def get_curve(self, curve: openglider.rs.vector.PolyLine2D) -> openglider.rs.vector.PolyLine2D | None:
+        assert self.flattened_panel is not None, "Call prepare() before draw_curve()"
+
+        result: list[openglider.rs.vector.Vector2D] = []
+        for point in curve:
+            p = self.get_area_point(point.x, point.y)
+            if p is not None:
+                result.append(p)
+        return openglider.rs.vector.PolyLine2D(result) if result else None
+    
     def _insert_miniribs(self, plotpart: PlotPart) -> list[tuple[float, float]]:
         result: list[tuple[float, float]] = []
         for minirib in self.cell.miniribs:

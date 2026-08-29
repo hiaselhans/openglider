@@ -1273,7 +1273,7 @@ impl Mesh {
         let mut buffer = Vec::new();
         let mut buffer_views: Vec<Value> = Vec::new();
         let mut accessors: Vec<Value> = Vec::new();
-        let mut meshes_primitives: Vec<Value> = Vec::new();
+        let mut mesh_entries: Vec<(String, Value)> = Vec::new();
         let mut materials: Vec<Value> = Vec::new();
 
         let (position_min, position_max) = self.position_bounds();
@@ -1360,7 +1360,7 @@ impl Mesh {
                 primitive.insert("attributes".to_string(), Value::Object(attributes));
                 primitive.insert("indices".to_string(), Value::from(line_accessor_index));
                 primitive.insert("mode".to_string(), Value::from(1u32));
-                meshes_primitives.push(Value::Object(primitive));
+                mesh_entries.push((format!("{} lines", object.name), Value::Object(primitive)));
             }
 
             let surface_indices = object_surface_indices(object);
@@ -1441,10 +1441,10 @@ impl Mesh {
                 "extras".to_string(),
                 json!({"part": object.name, "layer": if has_shared_texture && object.textured && uv_accessor_index.is_some() { "texture" } else { "base" }}),
             );
-            meshes_primitives.push(Value::Object(primitive));
+            mesh_entries.push((object.name.clone(), Value::Object(primitive)));
         }
 
-        if meshes_primitives.is_empty() {
+        if mesh_entries.is_empty() {
             return Err(pyo3::exceptions::PyValueError::new_err("mesh has no exportable primitives"));
         }
 
@@ -1455,9 +1455,22 @@ impl Mesh {
             Value::from(format!("data:application/octet-stream;base64,{}", encode_base64(&buffer))),
         );
 
-        let mut mesh_object = Map::new();
-        mesh_object.insert("name".to_string(), Value::from(self.name.clone()));
-        mesh_object.insert("primitives".to_string(), Value::Array(meshes_primitives));
+        let mut meshes = Vec::with_capacity(mesh_entries.len());
+        let mut nodes = Vec::with_capacity(mesh_entries.len());
+        let mut scene_nodes = Vec::with_capacity(mesh_entries.len());
+
+        for (mesh_index, (name, primitive)) in mesh_entries.into_iter().enumerate() {
+            let mut mesh_object = Map::new();
+            mesh_object.insert("name".to_string(), Value::from(name.clone()));
+            mesh_object.insert("primitives".to_string(), Value::Array(vec![primitive]));
+            meshes.push(Value::Object(mesh_object));
+
+            let mut node = Map::new();
+            node.insert("mesh".to_string(), Value::from(mesh_index));
+            node.insert("name".to_string(), Value::from(name));
+            nodes.push(Value::Object(node));
+            scene_nodes.push(Value::from(mesh_index));
+        }
 
         let mut root = Map::new();
         root.insert(
@@ -1468,9 +1481,9 @@ impl Mesh {
             }),
         );
         root.insert("scene".to_string(), Value::from(0u32));
-        root.insert("scenes".to_string(), json!([{ "nodes": [0] }]));
-        root.insert("nodes".to_string(), json!([{ "mesh": 0, "name": self.name.clone() }]));
-        root.insert("meshes".to_string(), Value::Array(vec![Value::Object(mesh_object)]));
+        root.insert("scenes".to_string(), Value::Array(vec![json!({ "nodes": scene_nodes })]));
+        root.insert("nodes".to_string(), Value::Array(nodes));
+        root.insert("meshes".to_string(), Value::Array(meshes));
         root.insert("buffers".to_string(), Value::Array(vec![Value::Object(buffer_object)]));
         root.insert("bufferViews".to_string(), Value::Array(buffer_views));
         root.insert("accessors".to_string(), Value::Array(accessors));
