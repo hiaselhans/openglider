@@ -57,6 +57,8 @@ class WgpuRenderWidget(QtWidgets.QWidget):
         self._rotation_timer.setInterval(33)  # approximately 30 FPS
         self._rotation_timer.timeout.connect(self._update_rotation)
 
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+
     def shutdown(self) -> None:
         """Deterministically release native renderer resources before app exit."""
         if self._is_closing:
@@ -317,6 +319,7 @@ class WgpuRenderWidget(QtWidgets.QWidget):
                 return False
             if event_type == QtCore.QEvent.Type.MouseButtonRelease and isinstance(event, QtGui.QMouseEvent):
                 self._interactor.end_drag()
+                self.setFocus()
                 return False
             if event_type == QtCore.QEvent.Type.Wheel and isinstance(event, QtGui.QWheelEvent):
                 if self._interactor.zoom(event.angleDelta().y()):
