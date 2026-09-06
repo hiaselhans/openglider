@@ -277,9 +277,9 @@ impl Mesh {
         }
 
         for (object_name, object_polygons) in polygons {
-            let color = parse_color_code(&object_name);
+            let (new_name, color) = parse_color_code(&object_name);
             let mut object = MeshObject {
-                name: object_name,
+                name: new_name.to_string(),
                 color,
                 textured: false,
                 lines: Vec::new(),
@@ -387,9 +387,10 @@ impl Mesh {
                     }
 
                     let object = objects.entry(current_group.clone()).or_insert_with(|| {
+                        let (new_name, color) = parse_color_code(&current_group);
                         MeshObject {
-                            name: current_group.clone(),
-                            color: parse_color_code(&current_group),
+                            name: new_name.to_string(),
+                            color: color,
                             textured: false,
                             lines: Vec::new(),
                             triangles: Vec::new(),
@@ -1404,7 +1405,9 @@ impl Mesh {
                 textured_pbr.insert("baseColorTexture".to_string(), json!({"index": 0, "texCoord": 0}));
 
                 let mut textured_material = Map::new();
-                textured_material.insert("name".to_string(), Value::from(format!("{} texture", object.name)));
+                // color (u8 tuple with length 3) as hex string
+                let color = format!("#{:02X}{:02X}{:02X}", object.color.0, object.color.1, object.color.2);
+                textured_material.insert("name".to_string(), Value::from(format!("{} texture {}", object.name, color)));
                 textured_material.insert("doubleSided".to_string(), Value::from(true));
                 textured_material.insert("alphaMode".to_string(), Value::from("BLEND"));
                 textured_material.insert("pbrMetallicRoughness".to_string(), Value::Object(textured_pbr));
@@ -1728,16 +1731,16 @@ fn parse_uv_node_attributes(py: Python<'_>, node_attributes: &[Py<PyAny>]) -> Py
     Ok(Some(uv_coords))
 }
 
-fn parse_color_code(name: &str) -> (u8, u8, u8) {
-    if let Some((_, hex)) = name.rsplit_once('#') {
+fn parse_color_code(name: &str) -> (&str, (u8, u8, u8)) {
+    if let Some((new_name, hex)) = name.rsplit_once('#') {
         if hex.len() == 6 {
             let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(255);
             let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
             let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
-            return (r, g, b);
+            return (new_name, (r, g, b));
         }
     }
-    (255, 255, 255)
+    (name, (255, 255, 255))
 }
 
 fn triangle_area(a: &Vector3D, b: &Vector3D, c: &Vector3D) -> f64 {

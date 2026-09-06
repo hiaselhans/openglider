@@ -210,7 +210,8 @@ class ParametricGlider:
             cuts.sort(key=lambda cut: cut.get_average_x())
 
             i = 0
-            materials = self.tables.material_cells.get(cell_no)
+
+            materials = self.tables.material_cells.get(cell_no, None, color_groups=self.config.color_groups)
 
             for cut1, cut2 in ZipCmp(cuts):
                 
@@ -227,17 +228,19 @@ class ParametricGlider:
                         continue
 
                 try:
-                    material = materials[i]
+                    material, color_group = materials[i]
                 except (KeyError, IndexError):
                     #logger.warning(f"No material for panel {cell_no}/{i+1}")
                     material = openglider.materials.Material(name="unknown")
+                    color_group = None
                 
                 i += 1
 
                 if material is not None:
                     panel = Panel(cut1, cut2,
                                 name=f"c{cell_no+1}p{len(panel_lst)+1}",
-                                material=material)
+                                material=material,
+                                color_group=color_group)
                     panel_lst.append(panel)
 
 
@@ -447,7 +450,7 @@ class ParametricGlider:
             front, back = shape_ribs[rib_no]
 
             try:
-                material = self.tables.material_ribs.get(rib_no)[0]
+                material = self.tables.material_ribs.get(rib_no, None, color_groups={})[0][0]
             except (KeyError, IndexError):
                 logger.warning(f"no material set for rib: {rib_no+1}")
                 material = openglider.materials.Material.default()

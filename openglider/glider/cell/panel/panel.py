@@ -239,16 +239,18 @@ class Panel(BaseModel):
     cut_front: PanelCut
     cut_back: PanelCut
     material: Material = cloth.get("porcher.skytex_32.white")
+    color_group: str | None = None
     name: str
 
-    def __init__(self, cut_front: PanelCut, cut_back: PanelCut, material: Material | str | None=None, name: str="unnamed"):
+    def __init__(self, cut_front: PanelCut, cut_back: PanelCut, material: Material | str | None=None, name: str="unnamed", color_group: str | None=None):
         if isinstance(material, str):
             material = cloth.get(material)
 
         kwargs = {}
         if material is not None:
             kwargs["material"] = material
-        
+        if color_group is not None:
+            kwargs["color_group"] = color_group
         # TODO: investigate type bug
         super().__init__(  # type: ignore
             cut_front=cut_front,
@@ -261,6 +263,7 @@ class Panel(BaseModel):
         return {'cut_front': self.cut_front,
                 'cut_back': self.cut_back,
                 "material": str(self.material),
+                "color_group": self.color_group,
                 "name": self.name
                 }
 
@@ -452,8 +455,12 @@ class Panel(BaseModel):
 
                     polygons += poly
 
+        if self.color_group is not None:
+            group_name = f"panel_{self.color_group}#{self.material.color_code}"
+        else:
+            group_name = f"panel_{self.material}#{self.material.color_code}"
         mesh_data: dict[str, Sequence[tuple[Any, Any]]] = {
-            f"panel_{self.material}#{self.material.color_code}": polygons,
+            group_name: polygons,
         }
 
         return mesh.Mesh.from_indexed(nodes, mesh_data, name=self.name, node_attributes=node_attributes)

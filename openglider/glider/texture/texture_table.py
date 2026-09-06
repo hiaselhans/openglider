@@ -45,17 +45,19 @@ class TextureTable(ConfigTable):
         return Texture(uv_map=uv_map, texture=svg_texture)
 
     @classmethod
-    def _migrate_table(cls, data: dict[str, list[Any]]) -> dict[str, list[Any]]:
-        migrated = dict(data)
+    def _migrate_table(cls, data: list[tuple[str, list[Any]]]) -> list[tuple[str, list[Any]]]:
+        migrated = list(data)
 
-        svg_values = migrated.get("svg")
-        if svg_values:
-            svg_value = svg_values[0]
+        for i, (key, values) in enumerate(migrated):
+            if key != "svg" or not values:
+                continue
+
+            svg_value = values[0]
             if svg_value is None:
-                migrated["svg"] = [None]
+                migrated[i] = ("svg", [None])
             else:
                 svg_text = str(svg_value)
-                migrated["svg"] = [svg_text if svg_text.strip() else None]
+                migrated[i] = ("svg", [svg_text if svg_text.strip() else None])
 
         return migrated
 

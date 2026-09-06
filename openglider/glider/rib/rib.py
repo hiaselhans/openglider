@@ -266,7 +266,7 @@ class Rib(RibBase):
 
             points = self.align_all(openglider.rs.vector.PolyLine2D(mesh.points))
 
-            rib_mesh = Mesh.from_indexed(points.nodes, polygons={f"ribs_{self.material}": [(tri, {}) for tri in mesh.elements]})
+            rib_mesh = Mesh.from_indexed(points.nodes, polygons={f"ribs#{self.material.color_code}": [(tri, {}) for tri in mesh.elements]})
 
             for hole in self.holes:
                 if hole_mesh := hole.get_mesh(self):

@@ -53,6 +53,8 @@ class ParametricGliderConfig(ConfigTable):
     use_sag: bool = True
     baseline_pct: Percentage | None = None
 
+    color_groups: dict[str, str] | None = None
+
     version: VersionType = Version(__version__)
 
     @classmethod
@@ -83,26 +85,41 @@ class ParametricGliderConfig(ConfigTable):
         }
     
     @classmethod
-    def _migrate_table(cls, data: dict[str, list[Any]]) -> dict[str, list[Any]]:
-        if (stabicell := data.pop("stabicell", None)) is not None:
-            data["has_stabicell"] = stabicell
+    def _migrate_table(cls, data: list[tuple[str, list[Any]]]) -> list[tuple[str, list[Any]]]:
+        migrated = list(data)
 
+        def pop_key(key: str) -> list[Any] | None:
+            for i, (existing_key, value) in enumerate(migrated):
+                if existing_key == key:
+                    migrated.pop(i)
+                    return value
+            return None
+
+        def upsert_key(key: str, value: list[Any]) -> None:
+            for i, (existing_key, _) in enumerate(migrated):
+                if existing_key == key:
+                    migrated[i] = (key, value)
+                    return
+            migrated.append((key, value))
+
+        if (stabicell := pop_key("stabicell")) is not None:
+            upsert_key("has_stabicell", stabicell)
 
         node_data: dict[str, dict[str, float]] = {}
-        node_keywords = []
+        node_keywords: list[str] = []
 
-        for keyword in data:
+        for keyword, values in migrated:
             # OLD data migration
             if match := re.match(r"ahp([xyz])(.*)", keyword):
                 node_keywords.append(keyword)
                 coordinate, node_name = match.groups()
                 node_data.setdefault(node_name, {})
-                node_data[node_name][coordinate] = float(data[keyword][0])
+                node_data[node_name][coordinate] = float(values[0])
 
         if node_keywords:
-            for keyword in node_keywords:
-                data.pop(keyword)
-            
+            node_keyword_set = set(node_keywords)
+            migrated = [entry for entry in migrated if entry[0] not in node_keyword_set]
+
             nodes = [
                 (name, openglider.rs.vector.Vector3D([node["x"], node["y"], node["z"]]))
                 for name, node in node_data.items()
@@ -110,10 +127,10 @@ class ParametricGliderConfig(ConfigTable):
             # take the lower node as main point
             if nodes[0][1][2] > nodes[1][1][2]:
                 nodes = [nodes[1], nodes[0]]
-            
-            data["pilot_position"] = list(nodes[0][1])
-            data["pilot_position_name"] = [nodes[0][0]]
-            data["brake_offset"] = list(nodes[1][1] - nodes[0][1])
-            data["brake_name"] = [nodes[1][0]]
-        
-        return data
+
+            upsert_key("pilot_position", list(nodes[0][1]))
+            upsert_key("pilot_position_name", [nodes[0][0]])
+            upsert_key("brake_offset", list(nodes[1][1] - nodes[0][1]))
+            upsert_key("brake_name", [nodes[1][0]])
+
+        return migrated
