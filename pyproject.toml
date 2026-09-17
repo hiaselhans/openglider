@@ -88,6 +88,23 @@ target = "openglider.rs"
 path = "Cargo.toml"
 binding = "PyO3"
 
+[tool.uv]
+# Without custom keys uv skips rust library rebuild
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "setup.py" },
+    { file = "setup.cfg" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+    { file = "openglider_rs/**/*" },
+    { file = "openglider_xfoil/*.cpp" },
+    { file = "openglider_xfoil/*.h" },
+    { file = "openglider_xfoil/*.hpp" },
+    { file = "scripts/fetch_cpp_deps.py" },
+    { file = "scripts/generate_pyi_stubs.py" },
+    { file = "openglider/version.py" },
+]
+
 [dependency-groups]
 dev = [
     "pytest>=7.0",

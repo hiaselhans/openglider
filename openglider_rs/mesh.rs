@@ -1180,7 +1180,10 @@ impl Mesh {
         self.points.extend(other.points.iter().copied());
 
         for other_object in &other.objects {
-            if let Some(target) = self.objects.iter_mut().find(|obj| obj.name == other_object.name) {
+            // Color is stored separately from the name, so it is part of the merge key.
+            if let Some(target) = self.objects.iter_mut().find(|obj| {
+                obj.name == other_object.name && obj.color == other_object.color
+            }) {
                 target.textured = target.textured || other_object.textured;
                 target.lines.extend(other_object.lines.iter().map(|line| Line {
                     a: line.a + offset,
@@ -1542,7 +1545,14 @@ impl Mesh {
                 group.push((indices, attributes));
             }
 
-            polygons.insert(object.name.clone(), group);
+            // The indexed format encodes colors in layer names. Restore the suffix
+            // so conversions neither lose colors nor overwrite same-name groups.
+            let name = if object.color == (255, 255, 255) {
+                object.name.clone()
+            } else {
+                format!("{}#{:02X}{:02X}{:02X}", object.name, object.color.0, object.color.1, object.color.2)
+            };
+            polygons.entry(name).or_default().extend(group);
         }
 
         polygons
