@@ -3,35 +3,35 @@ import collections
 import logging
 from typing import Any, TypeAlias
 import openglider.rs
+from openglider.rs import drawing
 
 from openglider.glider.cell.cell import Cell
 from openglider.glider.cell.panel.panel import Panel
 from openglider.glider.glider import Glider
 from openglider.utils.config import Config
 
-from openglider.vector.drawing import Layout
 from openglider.plots.glider.cell import CellPlotMaker as DefaultCellPlotMaker
+from openglider.plots.glider.layer_styles import initialize_part_layer_strokes
 from openglider.plots.glider.ribs import RibPlot, SingleSkinRibPlot
 from openglider.plots.glider.minirib import MiniRibPlot
 from openglider.plots.config import PatternConfig
 from openglider.plots.usage_stats import MaterialUsage
-from openglider.vector.drawing.part import PlotPart
 from openglider.vector.mapping import Quad
 from openglider.vector.unit import Length
 
 logger = logging.getLogger(__name__)
 
-PlotPartDict = collections.OrderedDict[Cell, list[PlotPart]]
+PlotPartDict = collections.OrderedDict[Cell, list[drawing.Part]]
 
 class PlotMaker:
     glider_3d: Glider
     config: PatternConfig
     
-    panels: Layout
-    ribs: list[PlotPart]
+    panels: drawing.Layout
+    ribs: list[drawing.Part]
     dribs: PlotPartDict
-    straps: collections.OrderedDict[Cell, tuple[list[PlotPart], list[PlotPart]]]
-    rigidfoils: list[PlotPart]
+    straps: collections.OrderedDict[Cell, tuple[list[drawing.Part], list[drawing.Part]]]
+    rigidfoils: list[drawing.Part]
     miniribs: PlotPartDict
     seam_allowance: Length
 
@@ -44,14 +44,14 @@ class PlotMaker:
     def __init__(self, glider_3d: Glider, config: Config | None=None):
         self.glider_3d = glider_3d
         self.config = self.DefaultConf(config)
-        self.panels = Layout()
+        self.panels = drawing.Layout()
         self.ribs = []
 
         self.dribs = collections.OrderedDict()
         self.straps = collections.OrderedDict()
         self.rigidfoils = []
         self.miniribs = collections.OrderedDict()
-        self.extra_parts: list[PlotPart] = []
+        self.extra_parts: list[drawing.Part] = []
         self._cellplotmakers: dict[Cell, DefaultCellPlotMaker] = dict()
 
         self.weight: dict[str, MaterialUsage] = {}
@@ -83,6 +83,175 @@ class PlotMaker:
             self._cellplotmakers[cell].prepare()
 
         return self._cellplotmakers[cell]
+
+    @staticmethod
+    def _layout_bbox(layout: drawing.Layout) -> tuple[float, float, float, float]:
+        return layout.bbox() or (0.0, 1.0, 0.0, 1.0)
+
+    @classmethod
+    def _layout_width_height(cls, layout: drawing.Layout) -> tuple[float, float]:
+        min_x, max_x, min_y, max_y = cls._layout_bbox(layout)
+        return max(max_x - min_x, 0.0), max(max_y - min_y, 0.0)
+
+    @staticmethod
+    def _plotpart_to_rs_part(plotpart: Any) -> drawing.Part:
+        if isinstance(plotpart, drawing.Part):
+            return plotpart.copy()
+
+        default_strokes = {
+            "cuts": "red",
+            "outline": "red",
+            "marks": "green",
+            "text": "blue",
+            "stitches": "black",
+            "envelope": "white",
+        }
+        rs_part = initialize_part_layer_strokes(
+            drawing.Part(name=plotpart.name, material_code=plotpart.material_code)
+        )
+        for layer_name in plotpart.layers.keys():
+            src_layer = plotpart.layers[layer_name]
+            with rs_part.layer(layer_name) as dst_layer:
+                dst_layer.style.stroke = src_layer.stroke or default_strokes.get(layer_name, "black")
+                dst_layer.style.stroke_width = src_layer.stroke_width
+                dst_layer.style.visible = src_layer.visible
+                for polyline in src_layer:
+                    dst_layer.add_line(polyline)
+        return rs_part
+
+    @classmethod
+    def _plotparts_to_rs_layout(cls, parts: list[drawing.Part]) -> drawing.Layout:
+        layout = drawing.Layout()
+        for plotpart in parts:
+            layout.add_part(cls._plotpart_to_rs_part(plotpart))
+        return layout
+
+    @classmethod
+    def _stack_column_rs(cls, layouts: list[drawing.Layout], distance: float, center_x: bool=True) -> drawing.Layout:
+        if not layouts:
+            return drawing.Layout()
+
+        widths = [cls._layout_width_height(layout)[0] for layout in layouts]
+        max_width = max(widths) if widths else 0.0
+        result = drawing.Layout()
+        y = 0.0
+        direction = (distance >= 0) - (distance < 0)
+
+        for layout, width in zip(layouts, widths):
+            moved = layout.copy()
+            min_x, _max_x, min_y, _max_y = cls._layout_bbox(moved)
+            x_offset = -min_x
+            if center_x:
+                x_offset += (max_width - width) / 2.0
+            y_offset = y - min_y
+            moved = moved.move(openglider.rs.vector.Vector2D([x_offset, y_offset]))
+
+            for part in moved.parts:
+                result.add_part(part)
+
+            _, height = cls._layout_width_height(moved)
+            y += direction * height
+            y += distance
+
+        return result
+
+    @classmethod
+    def _stack_row_rs(cls, layouts: list[drawing.Layout], distance: float, center_y: bool=True) -> drawing.Layout:
+        if not layouts:
+            return drawing.Layout()
+
+        heights = [cls._layout_width_height(layout)[1] for layout in layouts]
+        max_height = max(heights) if heights else 0.0
+        result = drawing.Layout()
+        x = 0.0
+        direction = (distance >= 0) - (distance < 0)
+
+        for layout, height in zip(layouts, heights):
+            moved = layout.copy()
+            min_x, _max_x, min_y, _max_y = cls._layout_bbox(moved)
+            y_offset = -min_y
+            if center_y:
+                y_offset += (max_height - height) / 2.0
+            x_offset = x - min_x
+            moved = moved.move(openglider.rs.vector.Vector2D([x_offset, y_offset]))
+
+            for part in moved.parts:
+                result.add_part(part)
+
+            width, _ = cls._layout_width_height(moved)
+            x += direction * width
+            x += distance
+
+        return result
+
+    @classmethod
+    def _stack_grid_rs(cls, rows: list[list[drawing.Layout]], dist_x: float, dist_y: float) -> drawing.Layout:
+        row_layouts = [cls._stack_row_rs(row, dist_x, center_y=True) for row in rows if row]
+        return cls._stack_column_rs(row_layouts, dist_y, center_x=False)
+
+    @classmethod
+    def _append_left_rs(cls, base: drawing.Layout, left: drawing.Layout, distance: float) -> drawing.Layout:
+        base_min_x, _base_max_x, base_min_y, _base_max_y = cls._layout_bbox(base)
+        left_min_x, left_max_x, left_min_y, _left_max_y = cls._layout_bbox(left)
+        left_width = max(left_max_x - left_min_x, 0.0)
+
+        x_offset = base_min_x - left_min_x - left_width - distance
+        y_offset = base_min_y - left_min_y
+        moved_left = left.move(openglider.rs.vector.Vector2D([x_offset, y_offset]))
+
+        combined = base.copy()
+        for part in moved_left.parts:
+            combined.add_part(part)
+        return combined
+
+    @staticmethod
+    def _group_by_material(layout: drawing.Layout) -> dict[str, drawing.Layout]:
+        grouped: dict[str, drawing.Layout] = {}
+        for part in layout.parts:
+            material = part.material_code or "default"
+            grouped.setdefault(material, drawing.Layout())
+            grouped[material].add_part(part.copy())
+        return grouped
+
+    @classmethod
+    def _border_part(cls, layout: drawing.Layout, border: float=0.1) -> drawing.Part | None:
+        bbox = layout.bbox()
+        if bbox is None:
+            return None
+
+        min_x, max_x, min_y, max_y = bbox
+        poly = openglider.rs.vector.PolyLine2D([
+            openglider.rs.vector.Vector2D([min_x - border, min_y - border]),
+            openglider.rs.vector.Vector2D([max_x + border, min_y - border]),
+            openglider.rs.vector.Vector2D([max_x + border, max_y + border]),
+            openglider.rs.vector.Vector2D([min_x - border, max_y + border]),
+            openglider.rs.vector.Vector2D([min_x - border, min_y - border]),
+        ])
+
+        part = drawing.Part()
+        with part.layer("border") as layer:
+            layer.style.stroke = "black"
+            layer.style.stroke_width = 0.25
+            layer.add_line(poly)
+        return part
+
+    @classmethod
+    def _add_label(cls, layout: drawing.Layout, label: str) -> None:
+        bbox = layout.bbox()
+        if bbox is None:
+            return
+
+        min_x, max_x, _min_y, max_y = bbox
+        p1 = openglider.rs.vector.Vector2D([min_x, max_y + 0.2])
+        p2 = openglider.rs.vector.Vector2D([max_x, max_y + 0.2])
+        text = drawing.Text(label, p1, p2, valign=0.0, align=-1.0)
+
+        part = drawing.Part()
+        with part.layer("text") as layer:
+            layer.style.stroke = "black"
+            layer.style.stroke_width = 0.25
+            layer.add_text(text)
+        layout.add_part(part)
 
     @staticmethod
     def _map_point_from_quad(
@@ -189,10 +358,10 @@ class PlotMaker:
 
         return result
 
-    def get_panels(self, extra_marks: list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]] | None = None) -> Layout:
-        self.panels.clear()
-        panels_upper: list[Layout | PlotPart] = []
-        panels_lower: list[Layout | PlotPart] = []
+    def get_panels(self, extra_marks: list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]] | None = None) -> drawing.Layout:
+        self.panels = drawing.Layout()
+        panels_upper: list[drawing.Layout] = []
+        panels_lower: list[drawing.Layout] = []
 
         weight = MaterialUsage()
 
@@ -214,8 +383,8 @@ class PlotMaker:
             _extra_marks = merged_marks if merged_marks else None
             lower = pm.get_panels_lower(extra_marks=_extra_marks)
             upper = pm.get_panels_upper(extra_marks=_extra_marks)
-            panels_lower.append(Layout.stack_column(lower, self.config.patterns_align_dist_y))
-            panels_upper.append(Layout.stack_column(upper, self.config.patterns_align_dist_y))
+            panels_lower.append(self._stack_column_rs([self._plotparts_to_rs_layout([part]) for part in lower], self.config.patterns_align_dist_y))
+            panels_upper.append(self._stack_column_rs([self._plotparts_to_rs_layout([part]) for part in upper], self.config.patterns_align_dist_y))
 
             panel_weight = pm.consumption
             if cell_no > 0 or not self.glider_3d.has_center_cell:
@@ -225,14 +394,14 @@ class PlotMaker:
 
 
         if self.config.layout_seperate_panels:
-            layout_lower = Layout.stack_row(panels_lower, self.config.patterns_align_dist_x)
-            layout_lower.rotate(180, radians=False)
-            layout_upper = Layout.stack_row(panels_upper, self.config.patterns_align_dist_x)
+            layout_lower = self._stack_row_rs(panels_lower, self.config.patterns_align_dist_x)
+            layout_lower = layout_lower.rotate(180, radians=False, center=None)
+            layout_upper = self._stack_row_rs(panels_upper, self.config.patterns_align_dist_x)
 
-            self.panels = Layout.stack_row([layout_lower, layout_upper], 2*self.config.patterns_align_dist_x)
+            self.panels = self._stack_row_rs([layout_lower, layout_upper], 2*self.config.patterns_align_dist_x)
 
         else:
-            self.panels = Layout.stack_grid([panels_upper, panels_lower], self.config.patterns_align_dist_x, self.config.patterns_align_dist_y)
+            self.panels = self._stack_grid_rs([panels_upper, panels_lower], self.config.patterns_align_dist_x, self.config.patterns_align_dist_y)
 
         self.weight["panels"] = weight
 
@@ -272,7 +441,7 @@ class PlotMaker:
             weight += rib_weight
 
             if rotate:
-                rib_plot.plotpart.rotate(-90, radians=False)
+                rib_plot.plotpart = rib_plot.plotpart.rotate(-90, radians=False, center=None)
             self.ribs.append(rib_plot.plotpart)
         
         self.weight["ribs"] = weight
@@ -295,7 +464,7 @@ class PlotMaker:
 
         return self.dribs
 
-    def get_straps(self) -> collections.OrderedDict[Cell, tuple[list[PlotPart], list[PlotPart]]]:
+    def get_straps(self) -> collections.OrderedDict[Cell, tuple[list[drawing.Part], list[drawing.Part]]]:
         self.straps.clear()
         weight = MaterialUsage()
 
@@ -314,7 +483,7 @@ class PlotMaker:
 
         return self.straps
 
-    def get_rigidfoils(self) -> tuple[list[PlotPart], list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]]]:
+    def get_rigidfoils(self) -> tuple[list[drawing.Part], list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]]]:
         self.rigidfoils.clear()
         extra_marks: list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]] = []
 
@@ -341,42 +510,43 @@ class PlotMaker:
 
         return self.miniribs
 
-    def get_all_grouped(self) -> Layout:
+    def get_all_grouped(self) -> drawing.Layout:
         # create x-raster
-        for rib in self.ribs:
-            rib.rotate(-90, radians=False)
+        self.ribs = [rib.rotate(-90, radians=False, center=None) for rib in self.ribs]
 
         panels = self.panels
-        ribs = Layout.stack_row(self.ribs, self.config.patterns_align_dist_x)
+        ribs = self._stack_row_rs([self._plotparts_to_rs_layout([rib]) for rib in self.ribs], self.config.patterns_align_dist_x)
 
-        def stack_grid(dct: PlotPartDict) -> Layout:
+        def stack_grid(dct: PlotPartDict) -> drawing.Layout:
             layout_lst = [
-                Layout.stack_column(p, self.config.patterns_align_dist_y) 
-                for p in dct.values()
-                ]
-            return Layout.stack_row(layout_lst, self.config.patterns_align_dist_x)
+                self._stack_column_rs([self._plotparts_to_rs_layout([part]) for part in part_list], self.config.patterns_align_dist_y)
+                for part_list in dct.values()
+            ]
+            return self._stack_row_rs(layout_lst, self.config.patterns_align_dist_x)
 
         dribs = stack_grid(self.dribs)
-        straps_upper = Layout.stack_row([
-            Layout.stack_column(c[0], self.config.patterns_align_dist_y) for c in self.straps.values()
+        straps_upper = self._stack_row_rs([
+            self._stack_column_rs([self._plotparts_to_rs_layout([part]) for part in c[0]], self.config.patterns_align_dist_y)
+            for c in self.straps.values()
         ], distance=self.config.patterns_align_dist_x)
-        straps_lower = Layout.stack_row([
-            Layout.stack_column(c[1][::-1], self.config.patterns_align_dist_y) for c in list(self.straps.values())[::-1]
+        straps_lower = self._stack_row_rs([
+            self._stack_column_rs([self._plotparts_to_rs_layout([part]) for part in c[1][::-1]], self.config.patterns_align_dist_y)
+            for c in list(self.straps.values())[::-1]
         ], distance=self.config.patterns_align_dist_x)
-        straps = straps_upper.append_left(straps_lower, distance=self.config.patterns_align_dist_x)
-        rigidfoils = Layout.stack_row(self.rigidfoils, self.config.patterns_align_dist_x)
+        straps = self._append_left_rs(straps_upper, straps_lower, distance=self.config.patterns_align_dist_x)
+        rigidfoils = self._stack_row_rs([self._plotparts_to_rs_layout([part]) for part in self.rigidfoils], self.config.patterns_align_dist_x)
         miniribs = stack_grid(self.miniribs)
 
-        def group(layout: Layout, prefix: str) -> list[Layout]:
-            grouped = layout.group_materials()
-            border = layout.draw_border(append=False)
-
+        def group(layout: drawing.Layout, prefix: str) -> list[drawing.Layout]:
+            grouped = self._group_by_material(layout)
+            results: list[drawing.Layout] = []
             for material_name, material_layout in grouped.items():
-                material_layout.parts.append(border.copy())
-                material_layout.add_text(f"{prefix}_{material_name}")
-                #material_layout.draw_border(append=True, border=0.1)
-            
-            return list(grouped.values())
+                border = self._border_part(material_layout)
+                if border is not None:
+                    material_layout.add_part(border)
+                self._add_label(material_layout, f"{prefix}_{material_name}")
+                results.append(material_layout)
+            return results
 
         panels_grouped = group(panels.copy(), "panels")
         ribs_grouped = group(ribs, "ribs")
@@ -384,8 +554,7 @@ class PlotMaker:
         straps_grouped = group(straps, "straps")
         miniribs_grouped = group(miniribs, "miniribs")
 
-
-        panels.add_text("panels_all")
+        self._add_label(panels, "panels_all")
 
         all_layouts = [panels]
         all_layouts += panels_grouped
@@ -395,15 +564,17 @@ class PlotMaker:
         all_layouts += miniribs_grouped
 
         if len(rigidfoils.parts):
-            rigidfoils.draw_border()
-            rigidfoils.add_text("rigidfoils")
+            border = self._border_part(rigidfoils)
+            if border is not None:
+                rigidfoils.add_part(border)
+            self._add_label(rigidfoils, "rigidfoils")
             all_layouts.append(rigidfoils)
 
         if len(self.extra_parts):
-            extra_parts = Layout.stack_row(self.extra_parts, self.config.patterns_align_dist_x)
+            extra_parts = self._stack_row_rs([self._plotparts_to_rs_layout([part]) for part in self.extra_parts], self.config.patterns_align_dist_x)
             all_layouts += group(extra_parts, "extra_parts")
 
-        return Layout.stack_column(all_layouts, 0.1, center_x=False)
+        return self._stack_column_rs(all_layouts, 0.1, center_x=False)
 
     def unwrap(self) -> PlotMaker:
         _, extra_marks = self.get_rigidfoils()

@@ -2,13 +2,14 @@ import logging
 import math
 
 import openglider.rs
+from openglider.rs import drawing
 from openglider.glider.cell import DiagonalRib
 from openglider.glider.cell.cell import Cell
 from openglider.plots.config import PatternConfig
+from openglider.plots.glider.layer_styles import add_line, add_lines, initialize_part_layer_strokes
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.materials import cloth
 from openglider.utils.config import Config
-from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
 from openglider.vector.unit import Length
 
@@ -122,14 +123,14 @@ class DribPlot:
         ik_new = inner_line.walk(0, length)
         return inner_line.get(ik_new), outer_line.get(ik_new)
     
-    def _insert_center_marks(self, plotpart: PlotPart) -> None:
+    def _insert_center_marks(self, plotpart: drawing.Part) -> None:
         def insert_center_mark(inner: openglider.rs.vector.PolyLine2D, outer: openglider.rs.vector.PolyLine2D) -> None:
             ik = inner.walk(0, inner.get_length()/2)
             p1 = inner.get(ik)
             p2 = outer.get(ik)
 
             for layer_name, marks in self.config.marks_diagonal_center(p1, p2).items():
-                plotpart.layers[layer_name] += marks
+                add_lines(plotpart, layer_name, marks)
 
         # put center marks only on lower sides of diagonal ribs, always on straight ones
         if self.drib.side1.is_lower or self.drib.is_upper:
@@ -138,7 +139,7 @@ class DribPlot:
         if self.drib.side2.is_lower or self.drib.is_upper:
             insert_center_mark(self.inner_2, self.outer_2)
     
-    def _insert_controlpoints(self, plotpart: PlotPart) -> None:
+    def _insert_controlpoints(self, plotpart: drawing.Part) -> None:
         x: float
         sides = (
             (False, self.cell.rib1),
@@ -150,19 +151,20 @@ class DribPlot:
                 try:
                     p1, p2 = self.get_p1_p2(x, is_outer)
                     for layer_name, marks in self.config.marks_controlpoint(p1, p2).items():
-                        plotpart.layers[layer_name] += marks
+                        add_lines(plotpart, layer_name, marks)
                 except ValueError:
                     continue
 
-    def _insert_attachment_points(self, plotpart: PlotPart) -> None:
+    def _insert_attachment_points(self, plotpart: drawing.Part) -> None:
         def _add_mark(name: str, p1: openglider.rs.vector.Vector2D, p2: openglider.rs.vector.Vector2D, mirror: bool) -> None:
             for layer_name, marks in self.config.marks_attachment_point(p1, p2).items():
-                plotpart.layers[layer_name] += marks
+                add_lines(plotpart, layer_name, marks)
             left = p1 + (p1-p2)
             right = p1
             if mirror:
                 right, left = left, right
-            plotpart.layers["marks"] += Text(name, left, right).get_vectors()
+            for mark in Text(name, left, right).get_vectors():
+                plotpart.add_line("marks", mark)
 
         for attachment_point in self.cell.rib1.attachment_points:
             try:
@@ -178,7 +180,7 @@ class DribPlot:
                 continue
             _add_mark(attachment_point.name, p1, p2, self.drib.is_lower)
 
-    def _insert_text(self, plotpart: PlotPart) -> None:
+    def _insert_text(self, plotpart: drawing.Part) -> None:
         if self.drib.is_lower:
             front = self.front or openglider.rs.vector.PolyLine2D([self.inner_1.nodes[0], self.inner_2.nodes[0]])
         else:
@@ -200,16 +202,19 @@ class DribPlot:
 
             _text = Text(text, p1, p2, size=font_size, align="center", valign=1 if self.drib.num_folds > 0 else -1)
 
-            plotpart.layers["cuts"] += _text.get_vectors()
+            for line in _text.get_vectors():
+                plotpart.add_line("cuts", line)
 
         add_text(0.1, self.drib.name)
         add_text(0.9, self.cell.rib2.name)
 
-    def flatten(self) -> PlotPart:
+    def flatten(self) -> drawing.Part:
         return self._flatten(self.drib.num_folds)
 
-    def _flatten(self, num_folds: int) -> PlotPart:
-        plotpart = PlotPart(material_code=self.drib.material_code, name=self.drib.name)
+    def _flatten(self, num_folds: int) -> drawing.Part:
+        plotpart = initialize_part_layer_strokes(
+            drawing.Part(material_code=self.drib.material_code, name=self.drib.name)
+        )
 
         if num_folds > 0:
             alw2 = self.drib.fold_allowance
@@ -219,14 +224,17 @@ class DribPlot:
             cut_front_result = cut_front.apply([(self.inner_1, len(self.inner_1) - 1), (self.inner_2, len(self.inner_2) - 1)], self.outer_2, self.outer_1)
             cut_back_result = cut_back.apply([(self.inner_1, 0), (self.inner_2, 0)], self.outer_2, self.outer_1)
             
-            plotpart.layers["cuts"] += [self.outer_2.get(cut_front_result.index_left, cut_back_result.index_left) +
-                                        cut_back_result.outline +
-                                        self.outer_1.get(cut_back_result.index_right, cut_front_result.index_right) +
-                                        cut_front_result.outline.reverse()
-            ]
+            add_line(
+                plotpart,
+                "cuts",
+                self.outer_2.get(cut_front_result.index_left, cut_back_result.index_left) +
+                cut_back_result.outline +
+                self.outer_1.get(cut_back_result.index_right, cut_front_result.index_right) +
+                cut_front_result.outline.reverse(),
+            )
 
-            plotpart.layers["marks"].append(openglider.rs.vector.PolyLine2D([self.inner_1.get(0), self.inner_2.get(0)]))
-            plotpart.layers["marks"].append(openglider.rs.vector.PolyLine2D([self.inner_1.get(len(self.inner_1) - 1), self.inner_2.get(len(self.inner_2) - 1)]))
+            plotpart.add_line("marks", openglider.rs.vector.PolyLine2D([self.inner_1.get(0), self.inner_2.get(0)]))
+            plotpart.add_line("marks", openglider.rs.vector.PolyLine2D([self.inner_1.get(len(self.inner_1) - 1), self.inner_2.get(len(self.inner_2) - 1)]))
 
         else:
             outer: list[openglider.rs.vector.Vector2D] = self.outer_1.copy().nodes
@@ -247,13 +255,14 @@ class DribPlot:
                 self.outer_1.nodes[0]
             ]
             #outer += openglider.rs.vector.PolyLine2D([self.left_out.get(p1)])
-            plotpart.layers["cuts"].append(openglider.rs.vector.PolyLine2D(outer))
+            plotpart.add_line("cuts", openglider.rs.vector.PolyLine2D(outer))
 
         for curve in self.drib.get_holes(self.cell)[0]:
             curve = curve.rotate(-self.angle, openglider.rs.vector.Vector2D([0,0]))
-            plotpart.layers["cuts"].append(curve)
+            plotpart.add_line("cuts", curve)
 
-        plotpart.layers["stitches"] += [self.inner_1, self.inner_2]
+        plotpart.add_line("stitches", self.inner_1)
+        plotpart.add_line("stitches", self.inner_2)
 
         self._insert_attachment_points(plotpart)
         self._insert_center_marks(plotpart)
@@ -271,7 +280,7 @@ class DribPlot:
     def get_material_usage(self) -> MaterialUsage:
         dwg = self.plotpart
 
-        curves = dwg.layers["cuts"].polylines #was 'envelope' maybe a problem if numfolds > 0
+        curves = dwg.layers["cuts"].lines #was 'envelope' maybe a problem if numfolds > 0
         usage = MaterialUsage()
         material = cloth.get(dwg.material_code)
 
@@ -287,7 +296,7 @@ class DribPlot:
 
 
 class StrapPlot(DribPlot):
-    def flatten(self) -> PlotPart:
+    def flatten(self) -> drawing.Part:
         self.drib.material_code
         self.drib.name
         return self._flatten(self.drib.num_folds)

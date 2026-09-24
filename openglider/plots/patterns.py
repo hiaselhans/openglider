@@ -17,8 +17,7 @@ from openglider.plots.glider import PlotMaker
 from openglider.plots.spreadsheets import get_glider_data, get_glider_data_internal
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.utils.config import Config
-from openglider.vector.drawing import Layout
-from openglider.vector.text import Text
+from openglider.rs import drawing
 
 #import openglider.plots.sketches
 
@@ -52,7 +51,96 @@ class PatternsNew:
         project.get_glider_3d(force=True)
         return project
 
-    def _get_sketches(self) -> list[Layout]:
+    @staticmethod
+    def _layout_bbox(layout: drawing.Layout) -> tuple[float, float, float, float]:
+        return layout.bbox() or (0.0, 1.0, 0.0, 1.0)
+
+    @classmethod
+    def _layout_width_height(cls, layout: drawing.Layout) -> tuple[float, float]:
+        min_x, max_x, min_y, max_y = cls._layout_bbox(layout)
+        return max(max_x - min_x, 0.0), max(max_y - min_y, 0.0)
+
+    @classmethod
+    def _stack_column_rs(cls, layouts: list[drawing.Layout], distance: float) -> drawing.Layout:
+        if not layouts:
+            return drawing.Layout()
+
+        widths = [cls._layout_width_height(layout)[0] for layout in layouts]
+        max_width = max(widths) if widths else 0.0
+        result = drawing.Layout()
+        y = 0.0
+        direction = (distance >= 0) - (distance < 0)
+
+        for layout, width in zip(layouts, widths):
+            moved = layout.copy()
+            min_x, max_x, min_y, max_y = cls._layout_bbox(moved)
+            x_offset = (max_width - width) / 2.0 - min_x
+            y_offset = y - min_y
+            moved = moved.move(openglider.rs.vector.Vector2D([x_offset, y_offset]))
+
+            for part in moved.parts:
+                result.add_part(part)
+
+            _, height = cls._layout_width_height(moved)
+            y += direction * height
+            y += distance
+
+        return result
+
+    @classmethod
+    def _append_left_rs(cls, base: drawing.Layout, left: drawing.Layout, distance: float) -> drawing.Layout:
+        base_bbox = cls._layout_bbox(base)
+        left_bbox = cls._layout_bbox(left)
+
+        left_width = max(left_bbox[1] - left_bbox[0], 0.0)
+        x_offset = base_bbox[0] - left_bbox[0] - left_width - distance
+        y_offset = base_bbox[2] - left_bbox[2]
+
+        moved_left = left.move(openglider.rs.vector.Vector2D([x_offset, y_offset]))
+        combined = base.copy()
+        for part in moved_left.parts:
+            combined.add_part(part)
+
+        return combined
+
+    @staticmethod
+    def _legacy_to_rs_layout(legacy_layout: Any) -> drawing.Layout:
+        rs_layout = drawing.Layout()
+        default_config = getattr(legacy_layout, "layer_config", {}).get("*", {})
+
+        for legacy_part in legacy_layout.parts:
+            rs_part = drawing.Part(name=getattr(legacy_part, "name", None), material_code=getattr(legacy_part, "material_code", ""))
+
+            for layer_name, legacy_layer in legacy_part.layers.items():
+                layer_config = getattr(legacy_layout, "layer_config", {}).get(layer_name, default_config)
+
+                with rs_part.layer(layer_name) as rs_layer:
+                    stroke = layer_config.get("stroke-color") or getattr(legacy_layer, "stroke", None)
+                    rs_layer.style.stroke = stroke if isinstance(stroke, str) else None
+
+                    stroke_width = layer_config.get("stroke-width", getattr(legacy_layer, "stroke_width", 0.25))
+                    try:
+                        rs_layer.style.stroke_width = float(stroke_width)
+                    except (TypeError, ValueError):
+                        rs_layer.style.stroke_width = 0.25
+
+                    fill = layer_config.get("fill")
+                    if isinstance(fill, str) and fill.lower() != "none":
+                        rs_layer.style.fill = fill
+                    else:
+                        rs_layer.style.fill = None
+
+                    visible = layer_config.get("visible", getattr(legacy_layer, "visible", True))
+                    rs_layer.style.visible = bool(visible)
+
+                    for polyline in legacy_layer:
+                        rs_layer.add_line(polyline)
+
+            rs_layout.add_part(rs_part)
+
+        return rs_layout
+
+    def _get_sketches(self) -> list[drawing.Layout]:
         import openglider.plots.sketches as sketch
         shapeplot = sketch.ShapePlot(self.project)
         design_upper = shapeplot.copy().draw_design(lower=True)
@@ -74,21 +162,28 @@ class PatternsNew:
         straps.draw_attachment_points(add_text=False)
         straps.draw_straps()
 
-        drawings: list[Layout] = [design_upper.drawing, design_lower.drawing, lineplan.drawing, diagonals.drawing, straps.drawing]
+        drawings: list[drawing.Layout] = [design_upper.drawing, design_lower.drawing, lineplan.drawing, diagonals.drawing, straps.drawing]
 
-        drawings_width = max([dwg.width for dwg in drawings])
+        drawings_width = max([self._layout_width_height(dwg)[0] for dwg in drawings] + [1.0])
 
         # put name and date inside the patterns
         p1 = openglider.rs.vector.Vector2D([0., 0.])
         p2 = openglider.rs.vector.Vector2D([drawings_width, 0.])
-        text_name = Text(self.project.name or "unnamed", p1, p2, valign=1)
+        text_name = drawing.Text(self.project.name or "unnamed", p1, p2, valign=1)
         date_str = datetime.datetime.now().strftime("%d.%m.%Y")
-        text_date = Text(date_str, p1, p2, valign=0)
-        drawings += [Layout([x]) for x in [text_date.get_plotpart(), text_name.get_plotpart()]]
+        text_date = drawing.Text(date_str, p1, p2, valign=0)
+
+        for text in (text_date, text_name):
+            text_layout = drawing.Layout()
+            text_part = drawing.Part()
+            with text_part.layer("text") as layer:
+                layer.add_text(text)
+            text_layout.add_part(text_part)
+            drawings.append(text_layout)
 
         return drawings
     
-    def _get_plotfile(self) -> Layout:
+    def _get_plotfile(self) -> drawing.Layout:
         if self.config.complete_glider:
             glider = self.project.get_glider_3d().copy_complete()
             glider.rename_parts()
@@ -101,9 +196,10 @@ class PatternsNew:
             
         plots.unwrap()
         self.weight = plots.weight
-        all_patterns = plots.get_all_grouped()
-
-        return all_patterns
+        grouped = plots.get_all_grouped()
+        if isinstance(grouped, drawing.Layout):
+            return grouped
+        return self._legacy_to_rs_layout(grouped)
 
     def unwrap(self, outdir: Path | str) -> None:
         if not isinstance(outdir, Path):
@@ -113,14 +209,14 @@ class PatternsNew:
 
         self.logger.info("create sketches")
         drawings = self._get_sketches()
-        designs = Layout.stack_column(drawings, self.config.patterns_align_dist_y)
+        designs = self._stack_column_rs(drawings, self.config.patterns_align_dist_y)
 
         self.logger.info("create plots")
         all_patterns = self._get_plotfile()
-        all_patterns.append_left(designs, distance=self.config.patterns_align_dist_x*2)
+        all_patterns = self._append_left_rs(all_patterns, designs, distance=self.config.patterns_align_dist_x*2)
 
-        all_patterns.scale(1000)
-        all_patterns.export_dxf(outdir / "plots_all.dxf")
+        all_patterns = all_patterns.scale(1000)
+        all_patterns.export_dxf(str(outdir / "plots_all.dxf"))
 
         sketches = openglider.plots.sketches.get_all_plots(self.project)
 

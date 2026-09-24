@@ -5,7 +5,7 @@ import os
 import openglider
 import openglider.plots
 import openglider.plots.glider
-from openglider.vector.drawing import Layout
+from openglider.rs.drawing import Layout
 from tests.helpers import GliderTestCase
 
 

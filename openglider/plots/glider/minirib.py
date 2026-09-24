@@ -4,15 +4,16 @@ from typing import TYPE_CHECKING
 
 import logging
 import openglider.rs
+from openglider.rs import drawing
 
 from openglider.plots.config import PatternConfig
 from openglider.utils.config import Config
-from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
 from openglider.vector.unit import Percentage
 from openglider.glider.rib import MiniRib
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.materials import cloth
+from openglider.plots.glider.layer_styles import initialize_part_layer_strokes
 
 
 
@@ -66,7 +67,7 @@ class MiniRibPlot:
         return openglider.rs.vector.Vector2D(p_temp)
 
 
-    def add_text(self, plotpart: PlotPart) -> None:
+    def add_text(self, plotpart: drawing.Part) -> None:
         
         posX = self.minirib.front_cut
 
@@ -79,7 +80,8 @@ class MiniRibPlot:
         _text = Text(self.minirib.name, p1, p2, size=0.01, align="center", valign=0)
 
 
-        plotpart.layers[self.layer_name_text] += _text.get_vectors()
+        for line in _text.get_vectors():
+            plotpart.add_line(self.layer_name_text, line)
 
     
     def draw_outline(self) -> openglider.rs.vector.PolyLine2D:
@@ -143,7 +145,7 @@ class MiniRibPlot:
     def get_material_usage(self) -> MaterialUsage:
         dwg = self.plotpart
 
-        curves = dwg.layers["cuts"].polylines
+        curves = dwg.layers["cuts"].lines
         usage = MaterialUsage()
         material = cloth.get(dwg.material_code)
 
@@ -157,8 +159,10 @@ class MiniRibPlot:
 
         return usage
     
-    def flatten(self) -> PlotPart:
-        plotpart = PlotPart(material_code=self.minirib.material_code, name=self.minirib.name)
+    def flatten(self) -> drawing.Part:
+        plotpart = initialize_part_layer_strokes(
+            drawing.Part(material_code=self.minirib.material_code, name=self.minirib.name)
+        )
 
         nodes_top, nodes_bottom = self.minirib.get_nodes(self.cell)
 
@@ -173,12 +177,12 @@ class MiniRibPlot:
 
         envelope = self.draw_outline()
 
-        plotpart.layers[self.layer_name_sewing].append(self.inner)
+        plotpart.add_line(self.layer_name_sewing, self.inner)
                 
-        plotpart.layers[self.layer_name_outline].append(envelope)
+        plotpart.add_line(self.layer_name_outline, envelope)
 
         for curve in self.minirib.get_holes(self.cell)[0]:
-            plotpart.layers["cuts"].append(curve)
+            plotpart.add_line("cuts", curve)
 
         self.add_text(plotpart)
 

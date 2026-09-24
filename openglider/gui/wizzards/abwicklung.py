@@ -8,12 +8,11 @@ from openglider.utils.types import expect_value
 from openglider.glider.project import GliderProject
 from openglider.glider.rib import SingleSkinRib
 from openglider.gui.qt import QtCore, QtGui, QtWidgets
-from openglider.gui.views_2d import Canvas, LayoutGraphics
+from openglider.gui.views_2d import Canvas, RsLayoutGraphics
 from openglider.gui.wizzards.base import Wizard
 from openglider.plots import Patterns
 from openglider.plots.glider import PlotMaker
 from openglider.utils.tasks import Task
-from openglider.vector.drawing import Layout
 
 if TYPE_CHECKING:
     from openglider.gui.app.main_window import MainWindow
@@ -40,12 +39,13 @@ class PlotLayerSettings(QtWidgets.QWidget):
         
         self.changed.emit()
 
-    def update_layers(self, drawing: Layout) -> None:
+    def update_layers(self, drawing: object) -> None:
         available_layers: set[str] = set()
 
         for part in drawing.parts:
             for layer_name, layer in part.layers.items():
-                if len(layer):
+                layer_len = len(layer.lines) if hasattr(layer, "lines") else len(layer)
+                if layer_len:
                     self.layer_settings.setdefault(layer_name, True)
                     available_layers.add(layer_name)
 
@@ -100,7 +100,7 @@ class PlotWizzard(Wizard):
         self.select_layers.changed.connect(self.update_config)
         layout.addWidget(self.select_layers, 0, 2, 1, 3)
 
-        self._current_plotpart: LayoutGraphics | None = None
+        self._current_plotpart: RsLayoutGraphics | None = None
         self.canvas = Canvas()
         self.canvas.locked_aspect_ratio = True
         self.canvas.grid = True
@@ -160,7 +160,7 @@ class PlotWizzard(Wizard):
                 rib_plot = self.plotmaker.RibPlot(rib)  # type: ignore
             rib_plot.flatten(glider_3d)
             dwg = rib_plot.plotpart
-            layout = Layout([dwg])
+            layout = self.plotmaker._plotparts_to_rs_layout([dwg])
 
         elif type_str == "Panels":
             cell = glider_3d.cells[element_index]
@@ -168,26 +168,46 @@ class PlotWizzard(Wizard):
 
             _, panel_marks = cell_plot.get_rigidfoils()
 
-            layout_upper = Layout.stack_column(cell_plot.get_panels_upper(extra_marks=panel_marks), dy)
-            layout_lower = Layout.stack_column(cell_plot.get_panels_lower(extra_marks=panel_marks), dy)
-            layout_lower.rotate(180, radians=False)
+            upper_parts = cell_plot.get_panels_upper(extra_marks=panel_marks)
+            lower_parts = cell_plot.get_panels_lower(extra_marks=panel_marks)
+            layout_upper = self.plotmaker._stack_column_rs(
+                [self.plotmaker._plotparts_to_rs_layout([part]) for part in upper_parts],
+                dy,
+            )
+            layout_lower = self.plotmaker._stack_column_rs(
+                [self.plotmaker._plotparts_to_rs_layout([part]) for part in lower_parts],
+                dy,
+            )
+            layout_lower = layout_lower.rotate(180, radians=False, center=None)
 
-            layout = Layout.stack_row([layout_upper, layout_lower], dx)
+            layout = self.plotmaker._stack_row_rs([layout_upper, layout_lower], dx)
 
         elif type_str == "Diagonals":
             cell = glider_3d.cells[element_index]
             cell_plot = self.plotmaker.CellPlotMaker(cell, config=config)
-            layout_dribs = Layout.stack_column(cell_plot.get_dribs(), dy)
+            layout_dribs = self.plotmaker._stack_column_rs(
+                [self.plotmaker._plotparts_to_rs_layout([part]) for part in cell_plot.get_dribs()],
+                dy,
+            )
             straps = cell_plot.get_straps()
-            layout_straps_upper = Layout.stack_column(straps[0], dy)
-            layout_straps_lower = Layout.stack_column(straps[1], dy)
+            layout_straps_upper = self.plotmaker._stack_column_rs(
+                [self.plotmaker._plotparts_to_rs_layout([part]) for part in straps[0]],
+                dy,
+            )
+            layout_straps_lower = self.plotmaker._stack_column_rs(
+                [self.plotmaker._plotparts_to_rs_layout([part]) for part in straps[1]],
+                dy,
+            )
 
-            layout = Layout.stack_row([layout_dribs, layout_straps_upper, layout_straps_lower], 0.2)
+            layout = self.plotmaker._stack_row_rs([layout_dribs, layout_straps_upper, layout_straps_lower], 0.2)
             
         elif type_str == "Miniribs":
             cell = glider_3d.cells[element_index]
             minirib_plot = self.plotmaker.CellPlotMaker(cell, config=config)
-            layout = Layout.stack_column(minirib_plot.get_miniribs(), dy)
+            layout = self.plotmaker._stack_column_rs(
+                [self.plotmaker._plotparts_to_rs_layout([part]) for part in minirib_plot.get_miniribs()],
+                dy,
+            )
             #layout_lower = Layout.stack_column(cell_plot.get_panels_lower(), dy)
             #layout_lower.rotate(180, radians=False)
 
@@ -196,8 +216,8 @@ class PlotWizzard(Wizard):
         else:
             return
         
-        if not layout.is_empty():
-            self._current_plotpart = LayoutGraphics(layout)
+        if layout is not None and layout.parts:
+            self._current_plotpart = RsLayoutGraphics(layout)
             self.select_layers.update_layers(layout)
             self.update_config()
             #self.canvas.clear()

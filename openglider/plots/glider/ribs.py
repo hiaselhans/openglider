@@ -6,15 +6,16 @@ from typing import TYPE_CHECKING, Literal
 from collections.abc import Callable
 
 import openglider.rs
+from openglider.rs import drawing
 
 from openglider.airfoil import get_x_value
 from openglider.glider.cell.diagonals import DiagonalSide
 from openglider.glider.cell.panel import PANELCUT_TYPES
 from openglider.glider.rib.rigidfoils import RigidFoilBase
 from openglider.plots.config import PatternConfig
+from openglider.plots.glider.layer_styles import add_line, add_lines, initialize_part_layer_strokes
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.utils.config import Config
-from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
 from openglider.vector.unit import Length, Percentage
 
@@ -28,13 +29,22 @@ if TYPE_CHECKING:
 Vector2D = openglider.rs.vector.Vector2D
 
 logger = logging.getLogger(__name__)
+def _merge_parts(dst: drawing.Part, src: drawing.Part) -> None:
+    for layer_name, layer in src.layers.items():
+        add_lines(dst, layer_name, list(layer.lines))
+        for text in layer.texts:
+            dst.add_text(layer_name, text)
+
+
+def _part_bbox(part: drawing.Part) -> tuple[float, float, float, float]:
+    return part.bbox() or (0.0, 0.0, 0.0, 0.0)
 
 
 class RigidFoilPlot:
     rigidfoil: RigidFoilBase
     ribplot: RibPlot
 
-    drawing: PlotPart
+    drawing: drawing.Part
     inner_curve: openglider.rs.vector.PolyLine2D | None = None
     outer_curve: openglider.rs.vector.PolyLine2D | None = None
     center_curve: openglider.rs.vector.PolyLine2D | None = None
@@ -42,14 +52,14 @@ class RigidFoilPlot:
     def __init__(self, rigidfoil: RigidFoilBase, ribplot: RibPlot) -> None:
         self.rigidfoil = rigidfoil
         self.ribplot = ribplot
-        self.drawing = PlotPart()
+        self.drawing = initialize_part_layer_strokes(drawing.Part())
 
     def add_text(self) -> None:
         (_, p1), (_, p2) = self.get_cap("back")
 
-        self.drawing.layers[self.ribplot.layer_name_text] += Text(
+        add_lines(self.drawing, self.ribplot.layer_name_text, Text(
             self.rigidfoil.name, p1, p2, align="center", valign=0.6
-        ).get_vectors()
+        ).get_vectors())
 
     def get_cap(self, side: Literal["front", "back"], outer_distance: float | None = None) -> tuple[tuple[Vector2D, Vector2D], tuple[Vector2D, Vector2D]]:
         if side == "front":
@@ -112,10 +122,10 @@ class RigidFoilPlot:
 
         rigidfoil_outline = self.rigidfoil.get_flattened(self.center_curve)
 
-        self.drawing.layers[self.ribplot.layer_name_marks].append(rigidfoil_outline)
-        self.ribplot.plotpart.layers[self.ribplot.layer_name_rigidfoils].append(rigidfoil_outline)
+        add_line(self.drawing, self.ribplot.layer_name_marks, rigidfoil_outline)
+        add_line(self.ribplot.plotpart, self.ribplot.layer_name_rigidfoils, rigidfoil_outline)
     
-    def flatten(self, glider: Glider) -> PlotPart:
+    def flatten(self, glider: Glider) -> drawing.Part:
         curve, inner_curve, outer_curve = self.setup(glider)
         plotpart = self.drawing
 
@@ -125,14 +135,14 @@ class RigidFoilPlot:
                 controlpoints.append((x, mark))
 
         # add marks into the profile
-        self.ribplot.plotpart.layers[self.ribplot.layer_name_laser_dots].append(openglider.rs.vector.PolyLine2D([curve.get(0)]))
-        self.ribplot.plotpart.layers[self.ribplot.layer_name_laser_dots].append(openglider.rs.vector.PolyLine2D([curve.get(len(curve)-1)]))
+        add_line(self.ribplot.plotpart, self.ribplot.layer_name_laser_dots, openglider.rs.vector.PolyLine2D([curve.get(0)]))
+        add_line(self.ribplot.plotpart, self.ribplot.layer_name_laser_dots, openglider.rs.vector.PolyLine2D([curve.get(len(curve)-1)]))
 
         back_cap = self.get_cap("back")
-        plotpart.layers[self.ribplot.layer_name_marks].append(openglider.rs.vector.PolyLine2D(list(back_cap[0])))
+        plotpart.add_line(self.ribplot.layer_name_marks, openglider.rs.vector.PolyLine2D(list(back_cap[0])))
 
         front_cap = self.get_cap("front")
-        plotpart.layers[self.ribplot.layer_name_marks].append(openglider.rs.vector.PolyLine2D(list(front_cap[0])))
+        plotpart.add_line(self.ribplot.layer_name_marks, openglider.rs.vector.PolyLine2D(list(front_cap[0])))
         
         outline_nodes = inner_curve.nodes[:]
         outline_nodes += list(back_cap[1])
@@ -144,9 +154,9 @@ class RigidFoilPlot:
             p = controlpoint[0].nodes[0]
             fits_x = self.rigidfoil.start < x and x < self.rigidfoil.end
             if fits_x or outline.contains(p):
-                plotpart.layers[self.ribplot.layer_name_laser_dots] += controlpoint
+                add_lines(plotpart, self.ribplot.layer_name_laser_dots, controlpoint)
                 
-        plotpart.layers[self.ribplot.layer_name_outline].append(outline.fix_errors().close())
+        plotpart.add_line(self.ribplot.layer_name_outline, outline.fix_errors().close())
 
         self.insert_mark()
         self.add_text()
@@ -280,8 +290,10 @@ class RibPlot:
 
 
 
-    def flatten(self, glider: Glider, add_rigidfoils_to_plot: bool=True) -> PlotPart:
-        self.plotpart = PlotPart(name=self.rib.name, material_code=str(self.rib.material))
+    def flatten(self, glider: Glider, add_rigidfoils_to_plot: bool=True) -> drawing.Part:
+        self.plotpart = initialize_part_layer_strokes(
+            drawing.Part(name=self.rib.name, material_code=str(self.rib.material))
+        )
         prof2d = self.rib.get_hull()
 
         self.x_values = prof2d.x_values
@@ -325,11 +337,11 @@ class RibPlot:
 
         rigidfoils = self.draw_rigidfoils(glider)
         if add_rigidfoils_to_plot and rigidfoils:
-            diff = max([r.max_x for r in rigidfoils])
+            diff = max([_part_bbox(r)[1] for r in rigidfoils])
+            min_x = _part_bbox(self.plotpart)[0]
             for rigidfoil in rigidfoils:
-                rigidfoil.move(openglider.rs.vector.Vector2D([-(diff-self.plotpart.min_x+0.2), 0]))
-
-                self.plotpart += rigidfoil
+                moved = rigidfoil.move(openglider.rs.vector.Vector2D([-(diff-min_x+0.2), 0]))
+                _merge_parts(self.plotpart, moved)
 
         return self.plotpart
 
@@ -362,7 +374,7 @@ class RibPlot:
             if insert:
                 if force_layer_name:
                     mark_layer = force_layer_name
-                self.plotpart.layers[mark_layer] += mark
+                add_lines(self.plotpart, mark_layer, mark)
 
             marks.append(mark)
         
@@ -396,17 +408,19 @@ class RibPlot:
         else:
             p1 = self.get_point(side.start_x(self.rib), side.height)
             p2 = self.get_point(side.end_x(self.rib), side.height)
-            self.plotpart.layers[self.layer_name_marks].append(openglider.rs.vector.PolyLine2D([p1, p2]))
+            add_line(self.plotpart, self.layer_name_marks, openglider.rs.vector.PolyLine2D([p1, p2]))
 
     def insert_holes(self) -> list[openglider.rs.vector.PolyLine2D]:
-        holes: list[PlotPart] = []
+        holes: list[drawing.Part] = []
         for hole in self.rib.holes:
             holes.append(hole.get_flattened(self.rib, num=200, layer_name=self.layer_name_crossports))
         
         curves: list[openglider.rs.vector.PolyLine2D] = []
         for plotpart in holes:
-            self.plotpart += plotpart
-            curves += list(plotpart.layers["cuts"])
+            _merge_parts(self.plotpart, plotpart)
+            cut_layer = plotpart.layers.get(self.layer_name_crossports)
+            if cut_layer is not None:
+                curves += list(cut_layer.lines)
 
         return curves
     
@@ -516,8 +530,8 @@ class RibPlot:
                 self.outer.get(start, stop).nodes + trailing_edge
             ).fix_errors()
 
-        self.plotpart.layers[self.layer_name_outline].append(outline)
-        self.plotpart.layers[self.layer_name_sewing] += inner
+        add_line(self.plotpart, self.layer_name_outline, outline)
+        add_lines(self.plotpart, self.layer_name_sewing, inner)
 
         return outline
 
@@ -553,9 +567,9 @@ class RibPlot:
             _text = Text(text, p1, p2, size=0.01, align="center")
 
 
-        self.plotpart.layers[self.layer_name_text] += _text.get_vectors()
+        add_lines(self.plotpart, self.layer_name_text, _text.get_vectors())
     
-    def draw_rigidfoils(self, glider: Glider) -> list[PlotPart]:
+    def draw_rigidfoils(self, glider: Glider) -> list[drawing.Part]:
         result = []
 
         # rigidfoils
@@ -619,7 +633,7 @@ class SingleSkinRibPlot(RibPlot):
 
         return self.skin_cut
 
-    def flatten(self, glider: Glider, add_rigidfoils_to_plot: bool=True) -> PlotPart:
+    def flatten(self, glider: Glider, add_rigidfoils_to_plot: bool=True) -> drawing.Part:
         self._get_singleskin_cut(glider)
         return super().flatten(glider, add_rigidfoils_to_plot=add_rigidfoils_to_plot)
 
@@ -659,7 +673,7 @@ class SingleSkinRibPlot(RibPlot):
         contour += inner_rib.get(single_skin_cut, len(inner_rib)-1)
         contour += buerzl
 
-        self.plotpart.layers[self.layer_name_outline].append(contour)
-        self.plotpart.layers[self.layer_name_sewing].append(self.inner)
+        add_line(self.plotpart, self.layer_name_outline, contour)
+        add_line(self.plotpart, self.layer_name_sewing, self.inner)
 
         return contour
