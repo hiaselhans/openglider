@@ -1180,7 +1180,11 @@ impl Mesh {
         self.points.extend(other.points.iter().copied());
 
         for other_object in &other.objects {
-            if let Some(target) = self.objects.iter_mut().find(|obj| obj.name == other_object.name) {
+            if let Some(target) = self
+                .objects
+                .iter_mut()
+                .find(|obj| obj.name == other_object.name && obj.color == other_object.color)
+            {
                 target.textured = target.textured || other_object.textured;
                 target.lines.extend(other_object.lines.iter().map(|line| Line {
                     a: line.a + offset,
