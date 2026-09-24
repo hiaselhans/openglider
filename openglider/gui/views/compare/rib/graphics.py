@@ -2,10 +2,10 @@ import logging
 
 from openglider.utils.colors import Color
 from openglider.glider.project import GliderProject
-from openglider.gui.views_2d.canvas import LayoutGraphics
+from openglider.gui.views_2d.canvas import RsLayoutGraphics
 from openglider.gui.views.compare.rib.settings import RibPlotLayers
 from openglider.plots.glider.ribs import RibPlot
-from openglider.vector.drawing import Layout
+from openglider.rs import drawing
 
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class GliderRibPlots:
     project: GliderProject
     config: RibPlotLayers
     color: Color
-    cache: dict[int, Layout]
+    cache: dict[int, drawing.Layout]
 
     def __init__(self, project: GliderProject, color: Color) -> None:
         self.project = project
@@ -34,7 +34,7 @@ class GliderRibPlots:
         self.cache = {}
         self.config = RibPlotLayers()
         
-    def get(self, rib_no: int, config: RibPlotLayers) -> LayoutGraphics:
+    def get(self, rib_no: int, config: RibPlotLayers) -> RsLayoutGraphics:
         if config != self.config:
             self.cache = {}
             self.config = config.copy()
@@ -50,20 +50,25 @@ class GliderRibPlots:
                         plot.plotpart.layers.pop(layer_name)
                 
                 plot.plotpart.scale(1/rib.chord)
-                dwg = Layout([plot.plotpart])
-                dwg.layer_config = {
-                    "*":  {
-                        "id": 'outer',
-                        "stroke-width": "0.25",
-                        "stroke": "red",
-                        "stroke-color": f"#{self.color.hex()}",
-                        "fill": "none"
-                        }
-                }
+                dwg = drawing.Layout()
+                part = drawing.Part()
+
+                for layer_name in plot.plotpart.layers.keys():
+                    layer_src = plot.plotpart.layers[layer_name]
+                    with part.layer(layer_name) as layer_dst:
+                        layer_dst.style.stroke = f"#{self.color.hex()}"
+                        layer_dst.style.visible = layer_src.visible
+                        layer_dst.style.stroke_width = layer_src.stroke_width
+                        if layer_src.stroke:
+                            layer_dst.style.stroke = layer_src.stroke
+                        for polyline in layer_src:
+                            layer_dst.add_line(polyline)
+
+                dwg.add_part(part)
             else:
-                dwg = Layout()
+                dwg = drawing.Layout()
             
             self.cache[rib_no] = dwg
         
-        return LayoutGraphics(self.cache[rib_no])
+        return RsLayoutGraphics(self.cache[rib_no])
 

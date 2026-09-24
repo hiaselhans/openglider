@@ -17,7 +17,7 @@ from openglider.glider.parametric.shape import ParametricShape
 from openglider.glider.project import GliderProject
 from openglider.gui.qt import QtWidgets, QtCore
 from openglider.gui.views_2d import Canvas, DraggableLine, Line2D
-from openglider.gui.views_2d.canvas import LayoutGraphics
+from openglider.gui.views_2d.canvas import RsLayoutGraphics
 from openglider.gui.widgets import NumberInput
 from openglider.gui.wizzards.base import GliderSelectionWizard
 from openglider.plots.sketches.shapeplot import ShapePlot, ShapePlotConfig
@@ -46,7 +46,7 @@ class ShapeInput(Canvas):
 
     glider_shape: EditableShape
     on_change: list[Callable[[EditableShape], None]]
-    glider_shapes: list[LayoutGraphics]
+    glider_shapes: list[RsLayoutGraphics]
 
     def __init__(self, project: GliderProject):
         super().__init__(parent=None)
@@ -70,7 +70,7 @@ class ShapeInput(Canvas):
 
         self.shape_drawing = ShapePlot(self.project)
         dwg = self.shape_drawing.redraw(self.config)
-        self.glider_shape_2d = LayoutGraphics(dwg)
+        self.glider_shape_2d = RsLayoutGraphics(dwg)
 
         #self.shape_drawing.redraw(self.config)
         #self.glider_shape_2d = Shape2D(self.glider_shape, [], (255, 255, 255), 160)
@@ -100,7 +100,7 @@ class ShapeInput(Canvas):
         for project, color in shapes:
             drawing = ShapePlot(project).redraw(self.config)
 
-            dwg_pyqt = LayoutGraphics(drawing, color=Color(*color))  #, color=color
+            dwg_pyqt = RsLayoutGraphics(drawing, color=Color(*color))  #, color=color
 
             self.addItem(dwg_pyqt)
             self.glider_shapes.append(dwg_pyqt)
@@ -137,7 +137,7 @@ class ShapeInput(Canvas):
             self.glider_shape.rescale_curves()
 
         self.removeItem(self.glider_shape_2d)
-        self.glider_shape_2d = LayoutGraphics(self.shape_drawing.redraw(self.config, force=True))
+        self.glider_shape_2d = RsLayoutGraphics(self.shape_drawing.redraw(self.config, force=True))
         self.addItem(self.glider_shape_2d)
 
 

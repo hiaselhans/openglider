@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import logging
 import math
+import io
+import re
 from os import PathLike
 from collections.abc import Iterator
 
 import openglider.rs
 import numpy as np
+import svglib.svglib
+from reportlab.graphics import renderPDF
 from openglider.glider.shape import Shape
 from openglider.lines.line import Line
 from openglider.lines.node import Node
 import openglider.plots.marks as marks
 from openglider.glider import GliderProject
 from openglider.glider.cell.panel import Panel, PanelCut
+from openglider.rs import drawing as rs_drawing
 from openglider.utils.dataclass import dataclass
-from openglider.vector.drawing import Layout, PlotPart
-from openglider.vector.text import Text
 from openglider.vector.unit import Percentage
 
 logger = logging.getLogger(__name__)
@@ -70,21 +73,68 @@ class ShapePlotConfig:
 class ShapePlot:
     project: GliderProject
     attachment_point_mark = marks.Cross(name="attachment_point", rotation=np.pi/4)
+    a4_width_mm = 297.0
+    attachment_text_size_mm = 1.0
+    line_text_size_mm = 1.0
+    attachment_text_offset_mm = 1.0
 
     config: ShapePlotConfig | None = None
 
     shapes: tuple[Shape, Shape] | None = None
     shapes_rot: tuple[Shape, Shape] | None = None
 
-    def __init__(self, project: GliderProject, drawing: Layout | None=None):
+    def __init__(self, project: GliderProject, drawing: rs_drawing.Layout | None=None):
         super().__init__()
         self.project = project
         self.glider_2d = project.glider
         self.glider_3d = project.get_glider_3d()
-        self.drawing = drawing or Layout()
+        self.drawing = drawing or rs_drawing.Layout()
 
         self.reference_area = self.glider_2d.shape.area
         self.reference_span = self.glider_2d.shape.span
+
+    def _new_part(self, material_code: str = "", name: str | None = None) -> rs_drawing.Part:
+        return rs_drawing.Part(name=name, material_code=material_code)
+
+    def _a4_span_scale(self) -> float:
+        if self.reference_span <= 0:
+            return 1.0
+        return self.a4_width_mm / self.reference_span
+
+    def _absolute_size_from_a4_mm(self, size_mm: float) -> float:
+        scale = self._a4_span_scale()
+        if scale <= 0:
+            return size_mm
+        return size_mm / scale
+
+    def _scaled_a4_layout(self) -> rs_drawing.Layout:
+        layout = self.drawing.copy()
+        bbox = layout.bbox()
+        if bbox is None:
+            return layout
+
+        min_x, max_x, min_y, max_y = bbox
+        width = max(max_x - min_x, max_y - min_y)
+        height = min(max_x - min_x, max_y - min_y)
+        if width <= 0 or height <= 0:
+            return layout
+
+        width_a4, height_a4 = 297, 210
+        factor = float(min(width_a4 / width, height_a4 / height))
+        return layout.scale(factor)
+
+    @staticmethod
+    def _material_fill_color(material_code: str) -> str | None:
+        match = re.search(r"#([0-9A-Fa-f]{3,8})", material_code)
+        if match:
+            return f"#{match.group(1)}"
+        return None
+
+    def _export_svg_to_pdf(self, path: PathLike, layout: rs_drawing.Layout) -> None:
+        svg_data = layout.to_svg_string(0.0).encode("utf-8")
+        with io.BytesIO(svg_data) as buffer:
+            report = svglib.svglib.svg2rlg(buffer)
+            renderPDF.drawToFile(report, str(path))
 
     def _get_shapes(self, config: ShapePlotConfig | None = None, force: bool=False) -> tuple[Shape, Shape]:
         if config is None:
@@ -117,12 +167,12 @@ class ShapePlot:
 
             return self.shapes
     
-    def redraw(self, config: ShapePlotConfig, force: bool=False) -> Layout:
+    def redraw(self, config: ShapePlotConfig, force: bool=False) -> rs_drawing.Layout:
         if config != self.config or force:
             if force:
                 self._get_shapes(force=True)
             self.config = config
-            self.drawing = Layout()
+            self.drawing = rs_drawing.Layout()
 
             for layer_name, show_layer in config.view_layers().items():
                 if show_layer:
@@ -166,7 +216,7 @@ class ShapePlot:
     def draw_design_upper(self, left: bool=False) -> ShapePlot:
         return self.draw_design(False, left)
 
-    def draw_design(self, lower: bool=True, left: bool=False) -> ShapePlot:
+    def draw_design(self, lower: bool=True, left: bool=False, fill: bool=True) -> ShapePlot:
         shapes = self._get_shapes()
         shape = shapes[left]
 
@@ -205,10 +255,16 @@ class ShapePlot:
                 l1 = get_cut_line(panel.cut_front)
                 l2 = get_cut_line(panel.cut_back).reverse()
 
-                self.drawing.parts.append(PlotPart(
-                    cuts=[openglider.rs.vector.PolyLine2D(l1.nodes + l2.nodes + [l1.nodes[0]])],
-                    material_code=f"{panel.material}#{panel.material.color_code}"
-                ))
+                part = self._new_part(material_code=f"{panel.material}#{panel.material.color_code}")
+                if panel.color_group is not None:
+                    layer_name = f"panels_{panel.color_group}"
+                else:
+                    layer_name = f"panels_{panel.material}#{panel.material.color_code}"
+                with part.layer(layer_name) as layer:
+                    if fill:
+                        layer.style.fill = f"#{panel.material.color_code}"
+                    layer.add_line(openglider.rs.vector.PolyLine2D(l1.nodes + l2.nodes + [l1.nodes[0]]))
+                self.drawing.add_part(part)
 
         return self
 
@@ -222,11 +278,10 @@ class ShapePlot:
             else:
                 pct = self.glider_2d.config.baseline_pct.si
 
-        part = PlotPart()
-        
+        part = self._new_part()
         line = openglider.rs.vector.PolyLine2D([shape.get_point(rib, pct) for rib in self._get_rib_range(left)])
-        part.layers["marks"].append(line)
-        self.drawing.parts.append(part)
+        part.add_line("marks", line)
+        self.drawing.add_part(part)
 
     def draw_grid(self, num: int=11, left: bool=False) -> ShapePlot:
         import numpy as np
@@ -238,7 +293,7 @@ class ShapePlot:
         return self
 
     def draw_en_marks(self) -> None:
-        part = PlotPart()
+        part = self._new_part()
         shapes = self._get_shapes()
 
         front, back = shapes[1].ribs[0]
@@ -262,15 +317,16 @@ class ShapePlot:
 
         diff = openglider.rs.vector.Vector2D([self.glider_2d.shape.span*0.05/2, 0])
 
-        part.layers["marks"] +=  [
+        for line in [
             collapse_side_50,
             collapse_side_75.move(diff*-1),
             collapse_side_75.move(diff),
             baseline(0.25),
-            baseline(0.5)
-        ]
+            baseline(0.5),
+        ]:
+            part.add_line("marks", line)
 
-        self.drawing.parts.append(part)
+        self.drawing.add_part(part)
 
     def _get_attachment_point_positions(self, left: bool=False) -> dict[str, openglider.rs.vector.Vector2D]:
 
@@ -290,28 +346,32 @@ class ShapePlot:
 
 
     def draw_attachment_points(self, add_text: bool=True, left: bool=False) -> None:
-        part = PlotPart()
+        part = self._new_part()
         points = self._get_attachment_point_positions(left=left)
+        text_size = self._absolute_size_from_a4_mm(self.attachment_text_size_mm)
+        text_offset = self._absolute_size_from_a4_mm(self.attachment_text_offset_mm)
 
-        for name, p1 in points.items():
-            p2 = p1 + openglider.rs.vector.Vector2D([0.1, 0])
+        with part.layer("attachment_points") as layer:
+            layer.style.stroke="green"
+            layer.style.stroke_width=0.25
+            for name, p1 in points.items():
+                p2 = p1 + openglider.rs.vector.Vector2D([0.1, 0])
 
+                diff = (p2-p1)*0.2
+                cross_left = p1 - diff
+                cross_right = p1 + diff
 
-            diff = (p2-p1)*0.2
-            cross_left = p1 - diff
-            cross_right = p1 + diff
+                cross = self.attachment_point_mark(cross_left, cross_right)
+                for cross_line in sum(cross.values(), start=[]):
+                    layer.add_line(cross_line)
 
-            cross = self.attachment_point_mark(cross_left, cross_right)
-            part.layers["marks"] += sum(cross.values(), start=[])
+                if add_text and name:
+                    text_start = p1 + openglider.rs.vector.Vector2D([0, text_offset])
+                    text_end = text_start + openglider.rs.vector.Vector2D([1, 0])
+                    text = rs_drawing.Text(f" {name} ", text_start, text_end, size=text_size)
+                    layer.add_text(text)
 
-            if add_text and name:
-                p1 = p1 + openglider.rs.vector.Vector2D([0, 0.02])
-                p2 = p2 + openglider.rs.vector.Vector2D([0, 0.02])
-                text = Text(f" {name} ", p1, p2)
-                vectors = text.get_vectors()
-                part.layers["text"] += vectors
-
-        self.drawing.parts.append(part)
+        self.drawing.add_part(part)
 
     def draw_cells(self, left: bool=False) -> None:
         shapes = self._get_shapes()
@@ -326,10 +386,13 @@ class ShapePlot:
             p4 = shape.get_point(cell_no, 1)
             cells.append(openglider.rs.vector.PolyLine2D([p1,p2,p3,p4,p1]))
 
-        self.drawing.parts.append(PlotPart(
-            marks=cells,
-            material_code="cell_numbers")
-        )
+        part = self._new_part(material_code="cell_numbers")
+        with part.layer("cells") as layer:
+            layer.style.stroke="grey"
+            layer.style.stroke_width=0.25
+            for cell in cells:
+                layer.add_line(cell)
+        self.drawing.add_part(part)
 
     def _get_font_size(self) -> float:
         assert self.shapes is not None
@@ -344,8 +407,6 @@ class ShapePlot:
     def draw_cell_names(self, left: bool=False) -> None:
         shapes = self._get_shapes()
         shape = shapes[left]
-        names = []
-
         cell_range = self._get_cell_range(left)
         if not cell_range:
             return
@@ -358,19 +419,14 @@ class ShapePlot:
             p1 = openglider.rs.vector.Vector2D([center[0] - 0.5, center[1]])
             p2 = openglider.rs.vector.Vector2D([center[0] + 0.5, center[1]])
 
-            text = Text(cell.name, p1, p2, size=size, valign=0, align="center")
-            names += text.get_vectors()
-
-        self.drawing.parts.append(PlotPart(
-            text=names,
-            material_code="cell_numbers")
-        )
+            text = rs_drawing.Text(cell.name, p1, p2, size=size, valign=0, align=0)
+            part = self._new_part(material_code="cell_numbers")
+            part.add_text("text", text)
+            self.drawing.add_part(part)
 
     def draw_rib_names(self, left: bool=False) -> ShapePlot:
         shapes = self._get_shapes()
         shape = shapes[left]
-        names = []
-
         cell_range = self._get_cell_range(left)
         if not cell_range:
             return self
@@ -385,13 +441,10 @@ class ShapePlot:
             p1 = openglider.rs.vector.Vector2D([rib_back[0] - 0.5, y])
             p2 = openglider.rs.vector.Vector2D([rib_back[0] + 0.5, y])
 
-            text = Text(rib.name, p1, p2, size=size, valign=-1.5, align="center")
-            names += text.get_vectors()
-
-        self.drawing.parts.append(PlotPart(
-            text=names,
-            material_code="rib_numbers")
-        )
+            text = rs_drawing.Text(rib.name, p1, p2, size=size, valign=-1.5, align=0)
+            part = self._new_part(material_code="rib_numbers")
+            part.add_text("text", text)
+            self.drawing.add_part(part)
         return self
 
     def draw_straps(self, left: bool=False) -> ShapePlot:
@@ -407,7 +460,9 @@ class ShapePlot:
                 points_left = [shape.get_point(cell_no, p) for p in left_x_values]
                 points_right = [shape.get_point(cell_no+1, p) for p in right_x_values]
 
-                self.drawing.parts.append(PlotPart(marks=[openglider.rs.vector.PolyLine2D(points_left + points_right[::-1] + points_left[:1])]))
+                part = self._new_part()
+                part.add_line("marks", openglider.rs.vector.PolyLine2D(points_left + points_right[::-1] + points_left[:1]))
+                self.drawing.add_part(part)
 
         return self
 
@@ -424,7 +479,9 @@ class ShapePlot:
                 points_left = [shape.get_point(cell_no, p) for p in left_x_values]
                 points_right = [shape.get_point(cell_no+1, p) for p in right_x_values]
 
-                self.drawing.parts.append(PlotPart(marks=[openglider.rs.vector.PolyLine2D(points_left + points_right[::-1] + points_left[:1])]))
+                part = self._new_part()
+                part.add_line("marks", openglider.rs.vector.PolyLine2D(points_left + points_right[::-1] + points_left[:1]))
+                self.drawing.add_part(part)
 
         return self
 
@@ -484,13 +541,11 @@ class ShapePlot:
             
             return lines
         
-        text_width = self.glider_3d.span / 300
-        diff_vect = openglider.rs.vector.Vector2D([text_width, 0])
+        text_size = self._absolute_size_from_a4_mm(self.line_text_size_mm)
         def insert_line(glider_line: Line, index: int) -> None:
             if glider_line.line_type.name == "riser":
                 return
-            pp = PlotPart()
-            layer = pp.layers[f"line_{glider_line.name}"]
+            pp = self._new_part()
             line = openglider.rs.vector.PolyLine2D([
                 # TODO: fix!
                 all_nodes[glider_line.upper_node],
@@ -499,18 +554,24 @@ class ShapePlot:
             if index % 2:
                 line = line.scale(openglider.rs.vector.Vector2D([-1, 1]))
 
-            text = Text(
-                glider_line.name,
-                line.nodes[0],
-                line.nodes[0]+diff_vect,
-                size=text_width,
-                #align="center",
-                valign=-0.6,
-                ).get_vectors()
-            pp.layers["text"] += text
-            layer += [line]
+            line_start = line.nodes[0] + (line.nodes[1] - line.nodes[0]) * 0.5
+            line_end = line_start + openglider.rs.vector.Vector2D([0.1, 0])
 
-            self.drawing.parts.append(pp)
+            text = rs_drawing.Text(
+                glider_line.name,
+                line_start,
+                line_end,
+                size=text_size,
+                align=-1,
+                valign=0,
+                )
+            with pp.layer("lines") as layer:
+                layer.style.stroke="black"
+                layer.style.stroke_width=0.25
+                layer.add_line(line)
+            pp.add_text("text", text)
+
+            self.drawing.add_part(pp)
 
         i = 0
         for node in lower:
@@ -529,13 +590,9 @@ class ShapePlot:
 
         return self
 
-    def export_a4(self, path: PathLike, fill: bool=False) -> None:
-        new = self.drawing.copy()
-        new.scale_a4()
-        
-        new.export_pdf(path, fill=fill)
+    def export_a4(self, path: PathLike) -> None:
+        new = self._scaled_a4_layout()
+        self._export_svg_to_pdf(path, new)
 
     def _repr_svg_(self) -> str:
-        new = self.drawing.copy()
-        new.scale_a4()
-        return new._repr_svg_()
+        return self._scaled_a4_layout()._repr_svg_()

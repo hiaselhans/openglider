@@ -24,8 +24,8 @@ def get_all_plots(project: GliderProject) -> dict[str, ShapePlot]:
     base_shape = ShapePlot(project)
     base_shape.draw_cells()
     base_shape.draw_cells(left=True)
-    base_shape.draw_design(lower=True)
-    base_shape.draw_design(lower=True, left=True)
+    base_shape.draw_design(lower=True, fill=False)
+    base_shape.draw_design(lower=True, left=True, fill=False)
 
     straps = base_shape.copy()
     straps.draw_straps()

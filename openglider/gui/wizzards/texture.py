@@ -420,14 +420,28 @@ class Texture2DPreview(QtWidgets.QWidget):
         uv_map = self._get_uv_map(glider_3d, uv_mode)
         layout = uv_map.get_layout()
         panel_polys: list[list[tuple[float, float]]] = []
+
+        def iter_layer_polylines(layer: object) -> list[list[tuple[float, float]]]:
+            if hasattr(layer, "lines"):
+                # rs_drawing.Layer
+                return [
+                    [(point.x, point.y) for point in polyline.nodes]
+                    for polyline in layer.lines
+                ]
+            # legacy vector.drawing layer
+            return [
+                [(point[0], point[1]) for point in polyline]
+                for polyline in layer
+            ]
+
         for part in layout.parts:
-            for polyline in part.layers["marks"]:
-                panel_polys.append(list(polyline))
+            if "marks" in part.layers:
+                panel_polys.extend(iter_layer_polylines(part.layers["marks"]))
 
         if not panel_polys:
             for part in layout.parts:
-                for polyline in part.layers["cuts"]:
-                    panel_polys.append(list(polyline))
+                if "cuts" in part.layers:
+                    panel_polys.extend(iter_layer_polylines(part.layers["cuts"]))
 
         bbox = self._get_bbox(panel_polys)
         self._panel_polys_by_mode[uv_mode] = panel_polys

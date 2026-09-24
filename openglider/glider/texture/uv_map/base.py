@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import openglider.rs
-from openglider.vector.drawing import Layout, PlotPart
+from openglider.rs import drawing
 
 
 from PIL import Image
@@ -224,7 +224,7 @@ class _UVMapBase:
 
         return panel_mesh
 
-    def get_layout(self) -> Layout:
+    def get_layout(self) -> drawing.Layout:
         """Return a 2D layout of mapped panel outlines, including mirrored halves."""
         points: list[openglider.rs.vector.PolyLine2D] = []
         for cell_no, panel_idx, cell, panel in self._iter_panels():
@@ -234,8 +234,12 @@ class _UVMapBase:
             if self._can_mirror(cell_no):
                 points.append(poly.mirror().close())
 
-        layout = Layout()
-        layout.parts.append(PlotPart(marks=points))
+        layout = drawing.Layout()
+        part = drawing.Part()
+        with part.layer("marks") as layer:
+            for polyline in points:
+                layer.add_line(polyline)
+        layout.add_part(part)
         return layout
 
     def _texture_point_from_panel_local(

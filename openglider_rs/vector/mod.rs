@@ -1,6 +1,6 @@
 mod vector;
 mod polyline;
-mod signature;
+pub(crate) mod signature;
 mod transformation;
 mod interpolation;
 

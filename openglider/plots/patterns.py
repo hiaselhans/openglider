@@ -125,11 +125,7 @@ class PatternsNew:
         sketches = openglider.plots.sketches.get_all_plots(self.project)
 
         for sketch_name, sketch in sketches.items():
-            fill = False
-            if sketch_name in ("design_upper", "design_lower"):
-                fill=True
-
-            sketch.export_a4(outdir / f"{sketch_name}.pdf", fill=fill)
+            sketch.export_a4(outdir / f"{sketch_name}.pdf")
 
         self.logger.info("create spreadsheets")
         self.project.get_glider_3d().lineset.rename_lines()

@@ -1,8 +1,11 @@
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
+import openglider.rs
 from openglider.glider.parametric.glider import ParametricGlider
+from openglider.plots.sketches.shapeplot import ShapePlot
 from tests.helpers import GliderTestCase, os, unittest
 from openglider.plots import PlotMaker
 from openglider import jsonify
@@ -63,6 +66,18 @@ class TestGlider(GliderTestCase):
         all_patterns.export_svg(path)
         all_patterns.export_dxf(dxfile)
         all_patterns.export_ntv(ntvfile)
+
+    def test_layout_scale_compensates_stroke_width(self) -> None:
+        line = openglider.rs.vector.PolyLine2D([[0.0, 0.0], [10.0, 2.0]])
+        style = openglider.rs.drawing.LayerStyle(stroke="black", stroke_width=0.25)
+        part = openglider.rs.drawing.Part()
+        part.add_layer("cuts", style=style)
+        part.add_line("cuts", line)
+
+        layout = openglider.rs.drawing.Layout([part])
+        scaled = layout.scale(29.7)
+
+        self.assertAlmostEqual(scaled.parts[0].layers["cuts"].style.stroke_width, 0.25 / 29.7, places=6)
 
     def test_export_glider_json(self) -> None:
         with open(self.tempfile('kite_3d.json'), "w+") as tmp:

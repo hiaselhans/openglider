@@ -5,9 +5,9 @@ import openglider.rs
 from openglider.utils import sign
 from openglider.utils.colors import Color
 from openglider.glider.project import GliderProject
-from openglider.gui.views_2d.canvas import LayoutGraphics
+from openglider.gui.views_2d.canvas import RsLayoutGraphics
 from openglider.gui.views.compare.cell.settings import CellPlotLayers
-from openglider.vector.drawing import Layout, PlotPart
+from openglider.rs import drawing
 
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class GliderCellPlots:
     project: GliderProject
     config: CellPlotLayers
     color: Color
-    cache: dict[int, pandas.DataFrame]
+    cache: dict[int, drawing.Layout]
 
     def __init__(self, project: GliderProject, color: Color) -> None:
         self.project = project
@@ -25,7 +25,7 @@ class GliderCellPlots:
         self.cache = {}
         self.config = CellPlotLayers()
         
-    def get(self, cell_no: int, config: CellPlotLayers) -> LayoutGraphics:
+    def get(self, cell_no: int, config: CellPlotLayers) -> RsLayoutGraphics:
         if config != self.config:
             self.cache = {}
             self.config = config.copy()
@@ -65,19 +65,23 @@ class GliderCellPlots:
                         [x, y]
                     ]))
 
-                part = PlotPart([cell.ballooning_modified.draw()] + cut_lines, marks=[zero_line])
-                dwg = Layout([part])
-                dwg.layer_config["cuts"] = {
-                    "id": 'outer',
-                    "stroke-width": "0.25",
-                    "stroke": "red",
-                    "stroke-color": f"#{self.color.hex()}",
-                    "fill": "none"
-                    }
+                dwg = drawing.Layout()
+                part = drawing.Part()
+                with part.layer("cuts") as layer:
+                    layer.style.stroke = f"#{self.color.hex()}"
+                    layer.style.stroke_width = 0.25
+                    layer.add_line(cell.ballooning_modified.draw())
+                    for cut_line in cut_lines:
+                        layer.add_line(cut_line)
+
+                with part.layer("marks") as layer:
+                    layer.add_line(zero_line)
+
+                dwg.add_part(part)
                 self.cache[cell_no] = dwg
             
             else:
-                self.cache[cell_no] = Layout()
+                self.cache[cell_no] = drawing.Layout()
         
-        return LayoutGraphics(self.cache[cell_no])
+        return RsLayoutGraphics(self.cache[cell_no])
 

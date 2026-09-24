@@ -1,3 +1,4 @@
+from . import drawing as drawing
 from . import mesh as mesh
 from . import plane as plane
 from . import spline as spline

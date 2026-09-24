@@ -1,5 +1,6 @@
 import logging
 import re
+import math
 from typing import Any
 
 import pyqtgraph
@@ -128,86 +129,36 @@ class CanvasGrid(pyqtgraph.GraphicsLayoutWidget):
 
 
 
-class LayoutGraphics(QtWidgets.QGraphicsObject):
+class _BaseLayoutGraphics(QtWidgets.QGraphicsObject):
     points: dict[str, list[QtCore.QPointF]]
     lines: dict[str, list[tuple[QtCore.QPointF, QtCore.QPointF]]]
     polygons: dict[str, list[list[QtCore.QPointF]]]
+    texts: list[tuple[str, QtCore.QPointF, float, str, float | None, str | None]]
     shown_layers: list[str] | None = None
 
     bounding_box: QtCore.QRectF | None = None
 
-    def __init__(self, layout: Layout, fill: bool=False, color: Color | None=None):
+    def __init__(self, layout: Any, fill: bool=False, color: Color | None=None):
         super().__init__()
-        self.layout: Layout = layout
+        self.layout = layout
         self.fill = fill
         self.alpha = 255
         self.color = color
-        #self.setAcceptHoverEvents(True)
-        #pyqtgraph.GraphicsScene.registerObject(self)
         self.update()
 
-    def update(self) -> None:  # type: ignore
+    @staticmethod
+    def _normalize_color_code(color_code: str) -> str:
+        try:
+            color = Color.parse_hex(color_code)
+            return color.hex()
+        except Exception:
+            return "ffffff"
+
+    def _reset_primitives(self) -> None:
         self.points = {}
         self.lines = {}
         self.polygons = {}
-
-        self.bounding_box = QtCore.QRectF(
-            self.layout.min_x,
-            self.layout.min_y,
-            self.layout.width,
-            self.layout.height
-        )
-
-        def normalize_color_code(color_code: str) -> str:
-            try:
-                color=Color.parse_hex(color_code)
-                return color.hex()
-            except:
-                return "ffffff"
-            
-        
-        default_config = self.layout.layer_config.get("*", {})
-
-        for part in self.layout.parts:
-            fill_color = None
-            if part.material_code and self.fill:
-                fill_color_str = re.findall(r".*#([0-9a-fA-f]{3,6})", part.material_code)
-                if fill_color_str:
-                    fill_color = normalize_color_code(fill_color_str[0])
-
-            for layer_name, layer in part.layers.items():
-                if self.shown_layers is not None and layer_name not in self.shown_layers:
-                    continue
-
-                layer_config = self.layout.layer_config.get(layer_name, default_config)
-                if not layer_config.get("visible", True):
-                    continue
-                color_code = str(layer_config.get("stroke-color", "#FFFFFF"))
-
-
-                color = normalize_color_code(color_code)
-                #pen = QtGui.QPen(QtGui.QBrush(color), 1)
-                #pen.setCosmetic(True)
-                #p.setPen(pen)
-
-                for line in layer:
-                    points_qt = [QtCore.QPointF(*p) for p in line]
-
-                    if len(line) == 1:
-                        self.points.setdefault(color, [])
-                        self.points[color].append(points_qt[0])
-                    else:
-                        if fill_color:
-                            self.polygons.setdefault(fill_color, [])
-                            self.polygons[fill_color].append(points_qt)
-                        else:
-                            self.lines.setdefault(color, [])
-                            for p1, p2 in zip(points_qt[:-1], points_qt[1:]):
-                                self.lines[color].append((p1, p2))
-        
-        #p.drawRect(self.boundingRect())
-
-
+        self.texts = []
 
     def paint(self, p: QtGui.QPainter, *args: Any) -> None:
         def setup_brush(color_code: str | Color) -> None:
@@ -242,7 +193,158 @@ class LayoutGraphics(QtWidgets.QGraphicsObject):
             for polygon in polygons:
                 p.drawPolygon(polygon)
 
+        for text_value, anchor, angle_deg, color_code, font_size, font_family in self.texts:
+            if self.color:
+                setup_brush(self.color)
+            else:
+                setup_brush(color_code)
+
+            font = p.font()
+            if font_size is not None:
+                font.setPointSizeF(max(1.0, font_size))
+            if font_family:
+                font.setFamily(font_family)
+            p.setFont(font)
+
+            p.save()
+            p.translate(anchor)
+            p.rotate(-angle_deg)
+            p.drawText(QtCore.QPointF(0.0, 0.0), text_value)
+            p.restore()
+
 
                 
     def boundingRect(self) -> QtCore.QRectF:
         return self.bounding_box or QtCore.QRectF(0,0,0,0)
+
+
+class LegacyLayoutGraphics(_BaseLayoutGraphics):
+    def __init__(self, layout: Layout, fill: bool=False, color: Color | None=None):
+        super().__init__(layout, fill=fill, color=color)
+
+    def update(self) -> None:  # type: ignore
+        self._reset_primitives()
+
+        self.bounding_box = QtCore.QRectF(
+            self.layout.min_x,
+            self.layout.min_y,
+            self.layout.width,
+            self.layout.height
+        )
+
+        default_config = self.layout.layer_config.get("*", {})
+
+        for part in self.layout.parts:
+            fill_color = None
+            if part.material_code and self.fill:
+                fill_color_str = re.findall(r".*#([0-9a-fA-f]{3,6})", part.material_code)
+                if fill_color_str:
+                    fill_color = self._normalize_color_code(fill_color_str[0])
+
+            for layer_name, layer in part.layers.items():
+                if self.shown_layers is not None and layer_name not in self.shown_layers:
+                    continue
+
+                layer_config = self.layout.layer_config.get(layer_name, default_config)
+                if not layer_config.get("visible", True):
+                    continue
+
+                color_code = str(layer_config.get("stroke-color", "#FFFFFF"))
+                color = self._normalize_color_code(color_code)
+
+                for line in layer:
+                    points_qt = [QtCore.QPointF(*p) for p in line]
+                    if len(line) == 1:
+                        self.points.setdefault(color, [])
+                        self.points[color].append(points_qt[0])
+                    else:
+                        if fill_color:
+                            self.polygons.setdefault(fill_color, [])
+                            self.polygons[fill_color].append(points_qt)
+                        else:
+                            self.lines.setdefault(color, [])
+                            for p1, p2 in zip(points_qt[:-1], points_qt[1:]):
+                                self.lines[color].append((p1, p2))
+
+
+class RsLayoutGraphics(_BaseLayoutGraphics):
+    def update(self) -> None:  # type: ignore
+        self._reset_primitives()
+
+        bbox = self.layout.bbox()
+        if bbox is None:
+            self.bounding_box = QtCore.QRectF(0, 0, 0, 0)
+        else:
+            min_x, max_x, min_y, max_y = bbox
+            self.bounding_box = QtCore.QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+
+        for part in self.layout.parts:
+            for layer_name, layer in part.layers.items():
+                if self.shown_layers is not None and layer_name not in self.shown_layers:
+                    continue
+
+                style = layer.style
+                if not style.visible:
+                    continue
+
+                stroke = style.stroke or "#FFFFFF"
+                color = self._normalize_color_code(stroke)
+
+                for line in layer.lines:
+                    points_qt = [QtCore.QPointF(p.x, p.y) for p in line.nodes]
+                    if len(points_qt) == 1:
+                        self.points.setdefault(color, [])
+                        self.points[color].append(points_qt[0])
+                    elif len(points_qt) > 1:
+                        fill_color = style.fill if self.fill else None
+                        if fill_color:
+                            normalized_fill = self._normalize_color_code(fill_color)
+                            self.polygons.setdefault(normalized_fill, [])
+                            self.polygons[normalized_fill].append(points_qt)
+                        else:
+                            self.lines.setdefault(color, [])
+                            for p1, p2 in zip(points_qt[:-1], points_qt[1:]):
+                                self.lines[color].append((p1, p2))
+
+                for text in layer.texts:
+                    dx = text.p2.x - text.p1.x
+                    dy = text.p2.y - text.p1.y
+                    length = math.hypot(dx, dy)
+                    direction_x, direction_y = (1.0, 0.0)
+                    if length > 0:
+                        direction_x, direction_y = (dx / length, dy / length)
+
+                    char_count = max(1, len(text.text))
+                    font_size = style.font_size
+                    if font_size is None:
+                        if text.size is not None:
+                            font_size = text.size
+                        else:
+                            font_size = length / char_count if length > 0 else 1.0
+
+                    text_width = font_size * char_count
+                    align = max(-1.0, min(1.0, text.align))
+                    base_factor = (align + 1.0) * 0.5
+                    base_x = text.p1.x + dx * base_factor
+                    base_y = text.p1.y + dy * base_factor
+                    horizontal_offset = -base_factor * text_width
+                    letter_height = text.height * font_size
+                    vertical_offset = letter_height * (text.valign - 0.5)
+                    normal_x, normal_y = (-direction_y, direction_x)
+                    anchor_x = base_x + direction_x * horizontal_offset + normal_x * vertical_offset
+                    anchor_y = base_y + direction_y * horizontal_offset + normal_y * vertical_offset
+                    angle_deg = math.degrees(math.atan2(dy, dx))
+
+                    text_color = style.fill or style.stroke or "#FFFFFF"
+                    self.texts.append((
+                        text.text,
+                        QtCore.QPointF(anchor_x, anchor_y),
+                        angle_deg,
+                        self._normalize_color_code(text_color),
+                        font_size,
+                        style.font_family,
+                    ))
+
+
+# Backward-compatible default: legacy layout renderer.
+LayoutGraphics = LegacyLayoutGraphics

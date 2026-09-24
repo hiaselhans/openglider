@@ -7,7 +7,7 @@ from openglider.utils.types import expect_value
 from openglider.glider.project import GliderProject
 from openglider.gui.app.app import GliderApp
 from openglider.gui.state.glider_list import GliderCache
-from openglider.gui.views_2d.canvas import Canvas, LayoutGraphics
+from openglider.gui.views_2d.canvas import Canvas, RsLayoutGraphics
 from openglider.gui.widgets.select import EnumSelection
 from openglider.plots.sketches.shapeplot import ShapePlot, ShapePlotConfig
 from openglider.gui.qt import QtCore, QtWidgets
@@ -154,8 +154,8 @@ class ShapeView(QtWidgets.QWidget, CompareView):
             dwg1 = plot1.redraw(config[0])
             dwg2 = plot2.redraw(config[1])
 
-            self.plot_upper.addItem(LayoutGraphics(dwg1, fill=True, color=color))
-            self.plot_lower.addItem(LayoutGraphics(dwg2, fill=True, color=color))
+            self.plot_upper.addItem(RsLayoutGraphics(dwg1, fill=True, color=color))
+            self.plot_lower.addItem(RsLayoutGraphics(dwg2, fill=True, color=color))
         
         self.plot_lower.update_data()
         self.plot_upper.update_data()

@@ -7,7 +7,6 @@ import abc
 
 import openglider.rs
 from openglider.utils.dataclass import BaseModel
-from openglider.vector.drawing import Layout, PlotPart
 from openglider.vector.unit import Angle, Percentage
 
 if TYPE_CHECKING:
@@ -328,17 +327,3 @@ class Shape(ShapeBase, BaseModel):
             front=openglider.rs.vector.PolyLine2D(front_new),
             back=openglider.rs.vector.PolyLine2D(back_new)
         )
-
-    def _repr_svg_(self) -> str:
-        da = Layout()
-        for cell_no in range(self.cell_no):
-            points = [
-                self.get_point(cell_no, 0),
-                self.get_point(cell_no, 1),
-                self.get_point(cell_no+1, 1),
-                self.get_point(cell_no+1, 0)
-            ]
-            points.append(points[0])
-            da.parts.append(PlotPart(marks=[openglider.rs.vector.PolyLine2D(points)]))
-
-        return da._repr_svg_()

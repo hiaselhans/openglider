@@ -2,6 +2,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 mod mesh;
+mod drawing;
 mod plane;
 mod spline;
 mod svg;
@@ -41,6 +42,8 @@ mod rs {
     use crate::cell::basic_cell_midrib;
     #[pymodule_export]
     use crate::cell::flatten_midribs;
+    #[pymodule_export]
+    use crate::drawing::drawing_mod as drawing;
     #[pymodule_export]
     use crate::mesh::find_duplicates;
     #[pymodule_export]

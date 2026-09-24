@@ -12,7 +12,7 @@ from openglider.gui.state.selection_list.list import SelectionList, SelectionLis
 from openglider.gui.qt import QtCore, QtWidgets
 from openglider.gui.views.compare.shape import ShapeConfigWidget
 from openglider.gui.views_2d import Canvas, DraggableLine, Line2D
-from openglider.gui.views_2d.canvas import LayoutGraphics
+from openglider.gui.views_2d.canvas import RsLayoutGraphics
 from openglider.gui.widgets.list_select import ListWidget
 from openglider.gui.widgets.select import EnumSelection
 from openglider.gui.widgets.table import QTable
@@ -37,7 +37,7 @@ class CurveInput(Canvas):
     shape: Shape
     curves: SelectionList[GliderCurveType, SelectionListItem[GliderCurveType]]
     active_curve: SelectionListItem[GliderCurveType] | None = None
-    layout_graphics: LayoutGraphics | None
+    layout_graphics: RsLayoutGraphics | None
     on_change: list[Callable]
 
     def __init__(self, project: GliderProject, curves: SelectionList[GliderCurveType, SelectionListItem[GliderCurveType]]):
@@ -62,7 +62,7 @@ class CurveInput(Canvas):
 
         self.shape_plot.redraw(self.shape_settings.config.copy())
 
-        self.layout_graphics = LayoutGraphics(self.shape_plot.drawing, fill=False)
+        self.layout_graphics = RsLayoutGraphics(self.shape_plot.drawing, fill=False)
         self.addItem(self.layout_graphics)
         self.draw_curves()
 
