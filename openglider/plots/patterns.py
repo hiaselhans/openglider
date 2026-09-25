@@ -17,8 +17,8 @@ from openglider.plots.glider import PlotMaker
 from openglider.plots.spreadsheets import get_glider_data, get_glider_data_internal
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.utils.config import Config
-from openglider.vector.drawing import Layout
 from openglider.vector.text import Text
+from openglider.rs import drawing
 
 #import openglider.plots.sketches
 
@@ -52,7 +52,7 @@ class PatternsNew:
         project.get_glider_3d(force=True)
         return project
 
-    def _get_sketches(self) -> list[Layout]:
+    def _get_sketches(self) -> list[drawing.Layout]:
         import openglider.plots.sketches as sketch
         shapeplot = sketch.ShapePlot(self.project)
         design_upper = shapeplot.copy().draw_design(lower=True)
@@ -74,21 +74,38 @@ class PatternsNew:
         straps.draw_attachment_points(add_text=False)
         straps.draw_straps()
 
-        drawings: list[Layout] = [design_upper.drawing, design_lower.drawing, lineplan.drawing, diagonals.drawing, straps.drawing]
+        drawings: list[drawing.Layout] = [design_upper.drawing, design_lower.drawing, lineplan.drawing, diagonals.drawing, straps.drawing]
 
-        drawings_width = max([dwg.width for dwg in drawings])
+        def _layout_width(layout: drawing.Layout) -> float:
+            bbox = layout.bbox()
+            if bbox is None:
+                return 0.0
+            min_x, _, max_x, _ = bbox
+            return max_x - min_x
+
+        drawings_width = max([_layout_width(dwg) for dwg in drawings], default=0.0)
 
         # put name and date inside the patterns
         p1 = openglider.rs.vector.Vector2D([0., 0.])
         p2 = openglider.rs.vector.Vector2D([drawings_width, 0.])
-        text_name = Text(self.project.name or "unnamed", p1, p2, valign=1)
+
+        def get_text(content: str, valign: int) -> drawing.Part:
+            text = drawing.Text(content, p1, p2, valign=valign)
+            plotpart = drawing.Part()
+            plotpart.add_text("text", text)
+            return plotpart
+
+        text_name = get_text(self.project.name or "unnamed", valign=1)
         date_str = datetime.datetime.now().strftime("%d.%m.%Y")
-        text_date = Text(date_str, p1, p2, valign=0)
-        drawings += [Layout([x]) for x in [text_date.get_plotpart(), text_name.get_plotpart()]]
+        text_date = get_text(date_str, valign=0)
+
+        drawings += [
+            drawing.Layout([p]) for p in [text_date, text_name]
+        ]
 
         return drawings
     
-    def _get_plotfile(self) -> Layout:
+    def _get_plotfile(self) -> drawing.Layout:
         if self.config.complete_glider:
             glider = self.project.get_glider_3d().copy_complete()
             glider.rename_parts()
@@ -101,9 +118,36 @@ class PatternsNew:
             
         plots.unwrap()
         self.weight = plots.weight
-        all_patterns = plots.get_all_grouped()
+        all_patterns = self._legacy_to_rs_layout(plots.get_all_grouped())
 
         return all_patterns
+
+    @staticmethod
+    def _legacy_to_rs_layout(layout: Any) -> drawing.Layout:
+        if isinstance(layout, drawing.Layout):
+            return layout
+
+        rs_parts: list[drawing.Part] = []
+
+        for legacy_part in layout.parts:
+            rs_layers: dict[str, drawing.Layer] = {}
+            for layer_name, legacy_layer in legacy_part.layers.items():
+                style = drawing.LayerStyle(
+                    stroke=legacy_layer.stroke,
+                    stroke_width=legacy_layer.stroke_width,
+                    visible=legacy_layer.visible,
+                )
+                rs_layers[layer_name] = drawing.Layer(lines=list(legacy_layer), style=style)
+
+            rs_parts.append(
+                drawing.Part(
+                    layers=rs_layers,
+                    name=legacy_part.name,
+                    material_code=legacy_part.material_code,
+                )
+            )
+
+        return drawing.Layout(rs_parts)
 
     def unwrap(self, outdir: Path | str) -> None:
         if not isinstance(outdir, Path):
@@ -113,14 +157,14 @@ class PatternsNew:
 
         self.logger.info("create sketches")
         drawings = self._get_sketches()
-        designs = Layout.stack_column(drawings, self.config.patterns_align_dist_y)
+        designs = drawing.Layout.stack_column(drawings, self.config.patterns_align_dist_y)
 
         self.logger.info("create plots")
         all_patterns = self._get_plotfile()
         all_patterns.append_left(designs, distance=self.config.patterns_align_dist_x*2)
 
-        all_patterns.scale(1000)
-        all_patterns.export_dxf(outdir / "plots_all.dxf")
+        all_patterns = all_patterns.scale(1000)
+        all_patterns.export_dxf(str(outdir / "plots_all.dxf"))
 
         sketches = openglider.plots.sketches.get_all_plots(self.project)
 

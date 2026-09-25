@@ -1114,6 +1114,56 @@ impl Layout {
         drawing.save(&mut buffer).map_err(|error| PyIOError::new_err(format!("failed to build dxf: {}", error)))?;
         String::from_utf8(buffer).map_err(|error| PyIOError::new_err(format!("failed to encode dxf text: {}", error)))
     }
+
+    fn stack_input_to_layouts(py: Python<'_>, parts: Vec<Py<PyAny>>) -> PyResult<Vec<Layout>> {
+        let mut layouts = Vec::with_capacity(parts.len());
+
+        for item in parts {
+            let any = item.bind(py);
+
+            if let Ok(layout) = any.extract::<Layout>() {
+                layouts.push(layout);
+                continue;
+            }
+
+            if let Ok(part) = any.extract::<Part>() {
+                layouts.push(Layout { parts: vec![part] });
+                continue;
+            }
+
+            return Err(PyValueError::new_err(
+                "parts must contain Layout or Part instances",
+            ));
+        }
+
+        Ok(layouts)
+    }
+
+    fn size_from_bbox(layout: &Layout) -> (f64, f64) {
+        if let Some((min_x, max_x, min_y, max_y)) = layout.bbox_impl() {
+            (max_x - min_x, max_y - min_y)
+        } else {
+            (0.0, 0.0)
+        }
+    }
+
+    fn moved_to(layout: &Layout, x: f64, y: f64) -> Layout {
+        if let Some((min_x, _, min_y, _)) = layout.bbox_impl() {
+            let dx = x - min_x;
+            let dy = y - min_y;
+            layout.transformed(|point| Vector2D {
+                x: point.x + dx,
+                y: point.y + dy,
+            })
+        } else {
+            layout.clone()
+        }
+    }
+
+    fn move_to_xy(&mut self, x: f64, y: f64) {
+        let moved = Layout::moved_to(self, x, y);
+        self.parts = moved.parts;
+    }
 }
 
 #[pymethods]
@@ -1136,12 +1186,121 @@ impl Layout {
         self.clone()
     }
 
+    #[staticmethod]
+    #[pyo3(signature = (parts, distance, center_x = true))]
+    fn stack_column(py: Python<'_>, parts: Vec<Py<PyAny>>, distance: f64, center_x: bool) -> PyResult<Self> {
+        let parts = Layout::stack_input_to_layouts(py, parts)?;
+        let widths: Vec<f64> = parts.iter().map(|layout| Layout::size_from_bbox(layout).0).collect();
+        let max_width = widths.iter().copied().fold(0.0, f64::max);
+        let direction = if distance < 0.0 { -1.0 } else { 1.0 };
+
+        let mut y = 0.0;
+        let mut column = Layout::default();
+
+        for (layout, width) in parts.iter().zip(widths.iter()) {
+            let (_, height) = Layout::size_from_bbox(layout);
+            let x = if center_x { (max_width - *width) / 2.0 } else { 0.0 };
+            let moved = Layout::moved_to(layout, x, y);
+            column.parts.extend(moved.parts);
+
+            y += direction * height;
+            y += distance;
+        }
+
+        Ok(column)
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (parts, distance, center_y = true))]
+    fn stack_row(py: Python<'_>, parts: Vec<Py<PyAny>>, distance: f64, center_y: bool) -> PyResult<Self> {
+        let parts = Layout::stack_input_to_layouts(py, parts)?;
+        let heights: Vec<f64> = parts.iter().map(|layout| Layout::size_from_bbox(layout).1).collect();
+        let max_height = heights.iter().copied().fold(0.0, f64::max);
+        let direction = if distance < 0.0 { -1.0 } else { 1.0 };
+
+        let mut x = 0.0;
+        let mut row = Layout::default();
+
+        for (layout, height) in parts.iter().zip(heights.iter()) {
+            let (width, _) = Layout::size_from_bbox(layout);
+            let y = if center_y { (max_height - *height) / 2.0 } else { 0.0 };
+            let moved = Layout::moved_to(layout, x, y);
+            row.parts.extend(moved.parts);
+
+            x += direction * width;
+            x += distance;
+        }
+
+        Ok(row)
+    }
+
     fn add_part(&mut self, part: Part) {
         self.parts.push(part);
     }
 
     fn bbox(&self) -> Option<(f64, f64, f64, f64)> {
         self.bbox_impl()
+    }
+
+    #[getter]
+    fn min_x(&self) -> f64 {
+        self.bbox_impl().map(|(min_x, _, _, _)| min_x).unwrap_or(0.0)
+    }
+
+    #[getter]
+    fn max_x(&self) -> f64 {
+        self.bbox_impl().map(|(_, max_x, _, _)| max_x).unwrap_or(0.0)
+    }
+
+    #[getter]
+    fn min_y(&self) -> f64 {
+        self.bbox_impl().map(|(_, _, min_y, _)| min_y).unwrap_or(0.0)
+    }
+
+    #[getter]
+    fn max_y(&self) -> f64 {
+        self.bbox_impl().map(|(_, _, _, max_y)| max_y).unwrap_or(0.0)
+    }
+
+    #[getter]
+    fn width(&self) -> f64 {
+        Layout::size_from_bbox(self).0.abs()
+    }
+
+    #[getter]
+    fn height(&self) -> f64 {
+        Layout::size_from_bbox(self).1.abs()
+    }
+
+    fn move_to(&mut self, target: Vector2DInput) -> PyResult<()> {
+        let target = target.into_vector()?;
+        self.move_to_xy(target.x, target.y);
+        Ok(())
+    }
+
+    #[pyo3(signature = (other, distance = 0.0))]
+    fn append_top(&mut self, other: &Layout, distance: f64) -> Self {
+        let mut moved = other.clone();
+        let y0 = if self.parts.is_empty() { 0.0 } else { self.max_y() + distance };
+        moved.move_to_xy(0.0, y0);
+        self.parts.extend(moved.parts);
+        self.clone()
+    }
+
+    #[pyo3(signature = (other, distance = 0.0))]
+    fn append_left(&mut self, other: &Layout, distance: f64) -> Self {
+        let mut moved = other.clone();
+        if !moved.parts.is_empty() {
+            let x0 = moved.width() + distance;
+            moved.move_to_xy(-x0, 0.0);
+        }
+        self.parts.extend(moved.parts);
+        self.clone()
+    }
+
+    fn join(&mut self, other: &Layout) -> Self {
+        self.parts.extend(other.parts.iter().cloned());
+        self.clone()
     }
 
     #[pyo3(name = "move")]
