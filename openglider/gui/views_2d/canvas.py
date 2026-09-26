@@ -8,7 +8,6 @@ from pyqtgraph.GraphicsScene.mouseEvents import MouseDragEvent
 from openglider.gui.qt import QtCore, QtGui, QtWidgets
 from openglider.gui.views_2d.elements import Image
 from openglider.utils.colors import Color
-from openglider.vector.drawing import Layout
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +136,7 @@ class _BaseLayoutGraphics(QtWidgets.QGraphicsObject):
     shown_layers: list[str] | None = None
 
     bounding_box: QtCore.QRectF | None = None
+    min_display_luminance: float = 96.0
 
     def __init__(self, layout: Any, fill: bool=False, color: Color | None=None):
         super().__init__()
@@ -148,11 +148,15 @@ class _BaseLayoutGraphics(QtWidgets.QGraphicsObject):
 
     @staticmethod
     def _normalize_color_code(color_code: str) -> str:
+        qt_color = QtGui.QColor(color_code)
+        if qt_color.isValid():
+            return qt_color.name().lstrip("#")
+
         try:
             color = Color.parse_hex(color_code)
             return color.hex()
         except Exception:
-            return "ffffff"
+            return "000000"
 
     def _reset_primitives(self) -> None:
         self.points = {}
@@ -160,12 +164,37 @@ class _BaseLayoutGraphics(QtWidgets.QGraphicsObject):
         self.polygons = {}
         self.texts = []
 
+    @staticmethod
+    def _relative_luminance(color: Color) -> float:
+        # Fast luminance approximation in sRGB space for contrast checks.
+        return 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
+
+    @classmethod
+    def _ensure_min_luminance(cls, color: Color) -> Color:
+        luminance = cls._relative_luminance(color)
+        if luminance >= cls.min_display_luminance:
+            return color
+
+        if luminance <= 1e-6:
+            value = int(cls.min_display_luminance)
+            return Color(value, value, value, color.name)
+
+        scale = cls.min_display_luminance / luminance
+        return Color(
+            r=min(255, int(round(color.r * scale))),
+            g=min(255, int(round(color.g * scale))),
+            b=min(255, int(round(color.b * scale))),
+            name=color.name,
+        )
+
     def paint(self, p: QtGui.QPainter, *args: Any) -> None:
         def setup_brush(color_code: str | Color) -> None:
             if isinstance(color_code, str):
                 color = Color.parse_hex(color_code)
             else:
                 color = color_code
+
+            color = self._ensure_min_luminance(color)
 
             qt_color = QtGui.QColor(*color.rgb(), self.alpha)
 
@@ -218,55 +247,6 @@ class _BaseLayoutGraphics(QtWidgets.QGraphicsObject):
         return self.bounding_box or QtCore.QRectF(0,0,0,0)
 
 
-class LegacyLayoutGraphics(_BaseLayoutGraphics):
-    def __init__(self, layout: Layout, fill: bool=False, color: Color | None=None):
-        super().__init__(layout, fill=fill, color=color)
-
-    def update(self) -> None:  # type: ignore
-        self._reset_primitives()
-
-        self.bounding_box = QtCore.QRectF(
-            self.layout.min_x,
-            self.layout.min_y,
-            self.layout.width,
-            self.layout.height
-        )
-
-        default_config = self.layout.layer_config.get("*", {})
-
-        for part in self.layout.parts:
-            fill_color = None
-            if part.material_code and self.fill:
-                fill_color_str = re.findall(r".*#([0-9a-fA-f]{3,6})", part.material_code)
-                if fill_color_str:
-                    fill_color = self._normalize_color_code(fill_color_str[0])
-
-            for layer_name, layer in part.layers.items():
-                if self.shown_layers is not None and layer_name not in self.shown_layers:
-                    continue
-
-                layer_config = self.layout.layer_config.get(layer_name, default_config)
-                if not layer_config.get("visible", True):
-                    continue
-
-                color_code = str(layer_config.get("stroke-color", "#FFFFFF"))
-                color = self._normalize_color_code(color_code)
-
-                for line in layer:
-                    points_qt = [QtCore.QPointF(*p) for p in line]
-                    if len(line) == 1:
-                        self.points.setdefault(color, [])
-                        self.points[color].append(points_qt[0])
-                    else:
-                        if fill_color:
-                            self.polygons.setdefault(fill_color, [])
-                            self.polygons[fill_color].append(points_qt)
-                        else:
-                            self.lines.setdefault(color, [])
-                            for p1, p2 in zip(points_qt[:-1], points_qt[1:]):
-                                self.lines[color].append((p1, p2))
-
-
 class RsLayoutGraphics(_BaseLayoutGraphics):
     def update(self) -> None:  # type: ignore
         self._reset_primitives()
@@ -287,7 +267,7 @@ class RsLayoutGraphics(_BaseLayoutGraphics):
                 if not style.visible:
                     continue
 
-                stroke = style.stroke or "#FFFFFF"
+                stroke = style.stroke or "#000000"
                 color = self._normalize_color_code(stroke)
 
                 for line in layer.lines:
@@ -335,7 +315,7 @@ class RsLayoutGraphics(_BaseLayoutGraphics):
                     anchor_y = base_y + direction_y * horizontal_offset + normal_y * vertical_offset
                     angle_deg = math.degrees(math.atan2(dy, dx))
 
-                    text_color = style.fill or style.stroke or "#FFFFFF"
+                    text_color = style.fill or style.stroke or "#000000"
                     self.texts.append((
                         text.text,
                         QtCore.QPointF(anchor_x, anchor_y),
@@ -345,6 +325,3 @@ class RsLayoutGraphics(_BaseLayoutGraphics):
                         style.font_family,
                     ))
 
-
-# Backward-compatible default: legacy layout renderer.
-LayoutGraphics = LegacyLayoutGraphics

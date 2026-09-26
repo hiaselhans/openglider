@@ -6,6 +6,7 @@ import logging
 import math
 
 import openglider.rs
+from openglider.rs import drawing
 from openglider.airfoil import get_x_value
 from openglider.glider.cell.cell import FlattenedCell
 from openglider.glider.cell.panel import Panel
@@ -13,10 +14,10 @@ from openglider.glider.cell.panel.panel import FlattenedPanel
 from openglider.glider.cell.rigidfoil import EntryStrap
 from openglider.plots.config import PatternConfig
 from openglider.plots.glider.diagonal import DribPlot, StrapPlot
+from openglider.plots.glider.layer_styles import add_line, add_lines, initialize_part_layer_strokes
 from openglider.plots.glider.minirib import MiniRibPlot
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.utils.config import Config
-from openglider.vector.drawing import PlotPart
 from openglider.vector.text import Text
 from openglider.vector.unit import Length, Percentage
 
@@ -24,10 +25,9 @@ if TYPE_CHECKING:
     from openglider.glider.cell import Cell
 
 logger = logging.getLogger(__name__)
-
 class PanelPlot:
     DefaultConf = PatternConfig
-    plotpart: PlotPart | None = None
+    plotpart: drawing.Part | None = None
     config: PatternConfig
     flattened_panel: FlattenedPanel | None = None
     flattened_cell: FlattenedCellWithAllowance
@@ -53,11 +53,11 @@ class PanelPlot:
         cut_types = self.config.get_cut_types()
         self.flattened_panel = self.panel.get_flattened(self.cell, self.config.midribs, cut_types=cut_types)
 
-    def flatten(self, extra_marks: list[openglider.rs.vector.PolyLine2D] | None=None) -> PlotPart:
+    def flatten(self, extra_marks: list[openglider.rs.vector.PolyLine2D] | None=None) -> drawing.Part:
         assert self.flattened_panel is not None, "Call prepare() before flatten()"
-        self.plotpart = PlotPart(material_code=str(self.panel.material), name=self.panel.name)
-
-        self.plotpart.layers["envelope"].append(self.flattened_panel.envelope)
+        self.plotpart = initialize_part_layer_strokes(
+            drawing.Part(material_code=str(self.panel.material), name=self.panel.name)
+        )
 
         if self.config.debug:
             inner_curves = self.flattened_panel.flattened_cell.inner
@@ -65,13 +65,13 @@ class PanelPlot:
             ik_back = self.flattened_panel.cut_back.inner_indices
 
             for curve, ikf, ikb in zip(inner_curves, ik_front, ik_back):
-                self.plotpart.layers["debug"].append(curve.get(ikf, ikb))
+                add_line(self.plotpart, "debug", curve.get(ikf, ikb))
 
         # sewings
-        self.plotpart.layers["stitches"] += [
+        add_lines(self.plotpart, "stitches", [
             self.inner[0].get(self.flattened_panel.cut_front.inner_indices[0], self.flattened_panel.cut_back.inner_indices[0]),
             self.inner[-1].get(self.flattened_panel.cut_front.inner_indices[-1], self.flattened_panel.cut_back.inner_indices[-1])
-            ]
+            ])
 
         # folding line
         self.front_curve = openglider.rs.vector.PolyLine2D([
@@ -81,19 +81,19 @@ class PanelPlot:
                 line.get(x) for line, x in zip(self.inner, self.flattened_panel.cut_back.inner_indices)
             ])
 
-        self.plotpart.layers["marks"] += [
+        add_lines(self.plotpart, "marks", [
             self.front_curve,
             self.back_curve
-        ]
+        ])
 
         if extra_marks is not None:
             for mark in extra_marks:
                 if len(mark) < 2:
-                    self.plotpart.layers["L0"].append(mark.copy())
+                    add_line(self.plotpart, "L0", mark.copy())
                 else:
-                    self.plotpart.layers["marks"].append(mark.copy())
+                    add_line(self.plotpart, "marks", mark.copy())
 
-        self.plotpart.layers["cuts"].append(self.flattened_panel.envelope.copy())
+        add_line(self.plotpart, "cuts", self.flattened_panel.envelope.copy())
 
         self._insert_text(self.plotpart)
         self._insert_controlpoints(self.plotpart)
@@ -101,7 +101,7 @@ class PanelPlot:
         self._insert_diagonals(self.plotpart)
         self._insert_miniribs(self.plotpart)
 
-        self._align_upright(self.plotpart)
+        self.plotpart = self._align_upright(self.plotpart)
 
         return self.plotpart
 
@@ -119,8 +119,7 @@ class PanelPlot:
 
     def get_material_usage(self) -> MaterialUsage:
         assert self.plotpart is not None
-        envelope = self.plotpart.layers["envelope"].polylines[0]
-        area = envelope.get_area()
+        area = self.flattened_panel.envelope.get_area()
 
         return MaterialUsage().consume(self.panel.material, area)
 
@@ -153,7 +152,7 @@ class PanelPlot:
         self,
         mark: Callable[[openglider.rs.vector.Vector2D, openglider.rs.vector.Vector2D], dict[str, list[openglider.rs.vector.PolyLine2D]]],
         x: float | Percentage,
-        plotpart: PlotPart,
+        plotpart: drawing.Part,
         is_right: bool
         ) -> None:
         if mark is None:
@@ -172,9 +171,9 @@ class PanelPlot:
             p2 = self.outer_orig[is_right].get(ik)
 
             for layer_name, mark_lines in mark(p1, p2).items():
-                plotpart.layers[layer_name] += mark_lines
+                add_lines(plotpart, layer_name, mark_lines)
 
-    def _align_upright(self, plotpart: PlotPart) -> PlotPart:
+    def _align_upright(self, plotpart: drawing.Part) -> drawing.Part:
         ik_front = self.front_curve.walk(0, self.front_curve.get_length()/2)
         ik_back = self.back_curve.walk(0, self.back_curve.get_length()/2)
 
@@ -185,10 +184,9 @@ class PanelPlot:
 
         angle = vector.angle() - math.pi/2
 
-        plotpart.rotate(-angle)
-        return plotpart
+        return plotpart.rotate(-angle, radians=True, center=None)
 
-    def _insert_text(self, plotpart: PlotPart) -> None:
+    def _insert_text(self, plotpart: drawing.Part) -> None:
         text = self.panel.name
 
         if self.config.layout_seperate_panels and not self.panel.is_lower():
@@ -209,9 +207,9 @@ class PanelPlot:
                          align="left",
                          valign=-0.9,
                          height=0.8)
-        plotpart.layers["text"] += part_text.get_vectors()
+        add_lines(plotpart, "text", part_text.get_vectors())
 
-    def _insert_controlpoints(self, plotpart: PlotPart) -> None:
+    def _insert_controlpoints(self, plotpart: drawing.Part) -> None:
         # insert chord-wise controlpoints
         for x in self.config.get_controlpoints(self.cell.rib1):
             self.insert_mark(self.config.marks_controlpoint, x, plotpart, False)
@@ -238,10 +236,10 @@ class PanelPlot:
                 p1 = inner.get(inner.walk(0, inner.get_length() * x))
                 p2 = outer.get(outer.walk(0, outer.get_length() * x))
                 for layer_name, mark in self.config.marks_controlpoint(p1, p2).items():
-                    plotpart.layers[layer_name] += mark
+                    add_lines(plotpart, layer_name, mark)
 
 
-    def _insert_diagonals(self, plotpart: PlotPart) -> None:
+    def _insert_diagonals(self, plotpart: drawing.Part) -> None:
         for strap in self.cell.straps + self.cell.diagonals:
             is_upper = strap.is_upper
             is_lower = strap.is_lower
@@ -266,7 +264,7 @@ class PanelPlot:
                 if strap.side2.is_lower:
                     self.insert_mark(self.config.marks_diagonal_center, strap.side2.center, plotpart, True)
 
-    def _insert_attachment_points(self, plotpart: PlotPart, insert_left: bool=True, insert_right: bool=True) -> None:
+    def _insert_attachment_points(self, plotpart: drawing.Part, insert_left: bool=True, insert_right: bool=True) -> None:
         def insert_side_mark(name: str, positions: list[float], is_right: bool) -> None:
             try:
                 p1, p2 = self.get_p1_p2(positions[0], is_right)
@@ -280,10 +278,10 @@ class PanelPlot:
 
 
                 text_align = "left" if is_right else "right"
-                plotpart.layers["text"] += Text(name, start, end, size=0.01, align=text_align, valign=0, height=0.8).get_vectors()  # type: ignore
+                add_lines(plotpart, "text", Text(name, start, end, size=0.01, align=text_align, valign=0, height=0.8).get_vectors())  # type: ignore
                 
                 for layer_name, mark in self.config.marks_attachment_point(p1, p2).items():
-                    plotpart.layers[layer_name] += mark
+                    add_lines(plotpart, layer_name, mark)
             except  ValueError:
                 pass
 
@@ -330,10 +328,10 @@ class PanelPlot:
                     if cell_pos in (1, 0):
                         x1, x2 = self.get_p1_p2(rib_pos, bool(cell_pos))
                         for layer_name, mark in self.config.marks_attachment_point(x1, x2).items():
-                            plotpart.layers[layer_name] += mark
+                            add_lines(plotpart, layer_name, mark)
                     else:
                         for layer_name, mark in self.config.marks_attachment_point(p1, p2).items():
-                            plotpart.layers[layer_name] += mark
+                            add_lines(plotpart, layer_name, mark)
                     
                     if self.config.insert_attachment_point_text and rib_pos_no == 0:
                         text_align = "left" if cell_pos > 0.7 else "right"
@@ -371,9 +369,13 @@ class PanelPlot:
                             p1 = left
                             p2 = right
                             # text_align = text_align
-                        plotpart.layers["text"] += Text(f" {cell_attachment_point.name} ", p1, p2,
-                                                        size=0.01,  # 1cm
-                                                        align=text_align, valign=0, height=0.8).get_vectors()  # type: ignore
+                        add_lines(
+                            plotpart,
+                            "text",
+                            Text(f" {cell_attachment_point.name} ", p1, p2,
+                                 size=0.01,  # 1cm
+                                 align=text_align, valign=0, height=0.8).get_vectors(),  # type: ignore
+                        )
                         
     def get_straight_line(
             self,
@@ -446,7 +448,7 @@ class PanelPlot:
                 result.append(p)
         return openglider.rs.vector.PolyLine2D(result) if result else None
     
-    def _insert_miniribs(self, plotpart: PlotPart) -> list[tuple[float, float]]:
+    def _insert_miniribs(self, plotpart: drawing.Part) -> list[tuple[float, float]]:
         result: list[tuple[float, float]] = []
         for minirib in self.cell.miniribs:
 
@@ -461,11 +463,11 @@ class PanelPlot:
 
             for line in (line1, line2):
                 if line is not None:
-                    plotpart.layers["marks"].append(line)
+                    plotpart.add_line("marks", line)
 
                     # laser dots
-                    plotpart.layers["L0"].append(openglider.rs.vector.PolyLine2D([line.get(0)]))
-                    plotpart.layers["L0"].append(openglider.rs.vector.PolyLine2D([line.get(len(line)-1)]))
+                    plotpart.add_line("L0", openglider.rs.vector.PolyLine2D([line.get(0)]))
+                    plotpart.add_line("L0", openglider.rs.vector.PolyLine2D([line.get(len(line)-1)]))
 
         return result
 
@@ -544,8 +546,8 @@ class CellPlotMaker:
             outer_orig=outer_orig
         )
 
-    def get_panels(self, panels: list[Panel] | None=None, extra_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] | None = None) -> list[PlotPart]:
-        cell_panels: list[PlotPart] = []
+    def get_panels(self, panels: list[Panel] | None=None, extra_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] | None = None) -> list[drawing.Part]:
+        cell_panels: list[drawing.Part] = []
 
         if panels is None:
             panels = self.cell.panels
@@ -562,18 +564,18 @@ class CellPlotMaker:
         
         return cell_panels
 
-    def get_panels_lower(self, extra_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] | None = None) -> list[PlotPart]:
+    def get_panels_lower(self, extra_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] | None = None) -> list[drawing.Part]:
         panels = [p for p in self.cell.panels if p.is_lower()]
         return self.get_panels(panels, extra_marks=extra_marks)
 
-    def get_panels_upper(self, extra_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] | None = None) -> list[PlotPart]:
+    def get_panels_upper(self, extra_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] | None = None) -> list[drawing.Part]:
         panels = [p for p in self.cell.panels if not p.is_lower()]
         return self.get_panels(panels, extra_marks=extra_marks)
 
-    def get_dribs(self) -> list[PlotPart]:
+    def get_dribs(self) -> list[drawing.Part]:
         diagonals = self.cell.diagonals[:]
         diagonals.sort(key=lambda d: d.name)
-        dribs: list[PlotPart] = []
+        dribs: list[drawing.Part] = []
         for drib in diagonals[::-1]:
             drib_plot = self.DribPlot(drib, self.cell, self.config)
             dribs.append(drib_plot.flatten())
@@ -581,11 +583,11 @@ class CellPlotMaker:
 
         return dribs
 
-    def get_straps(self) -> tuple[list[PlotPart], list[PlotPart]]:
+    def get_straps(self) -> tuple[list[drawing.Part], list[drawing.Part]]:
         straps = self.cell.straps[:]
         straps.sort(key=lambda d: (d.is_upper, d.get_average_x().si))
-        upper: list[PlotPart] = []
-        lower: list[PlotPart] = []
+        upper: list[drawing.Part] = []
+        lower: list[drawing.Part] = []
         for strap in straps:
             plot = self.StrapPlot(strap, self.cell, self.config)
             dwg = plot.flatten()
@@ -597,13 +599,13 @@ class CellPlotMaker:
 
         return upper, lower
     
-    def get_rigidfoils(self) -> tuple[list[PlotPart], dict[Panel, list[openglider.rs.vector.PolyLine2D]]]:
-        rigidfoils: list[PlotPart] = []
+    def get_rigidfoils(self) -> tuple[list[drawing.Part], dict[Panel, list[openglider.rs.vector.PolyLine2D]]]:
+        rigidfoils: list[drawing.Part] = []
         panel_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] = {}
         for rigidfoil in self.cell.rigidfoils:
             if not isinstance(rigidfoil, EntryStrap):
                 drawing, marks = rigidfoil.get_flattened(self.cell, self.config.midribs, cut_types=self.config.get_cut_types())
-                drawing.rotate(90, radians=False)
+                drawing = drawing.rotate(90, radians=False, center=None)
                 rigidfoils.append(drawing)
             else:
                 marks = rigidfoil.get_marks(self.cell, self.config.midribs, cut_types=self.config.get_cut_types())
@@ -614,10 +616,10 @@ class CellPlotMaker:
         return rigidfoils, panel_marks
     
 
-    def get_miniribs(self) -> list[PlotPart]:
+    def get_miniribs(self) -> list[drawing.Part]:
         miniribs = self.cell.miniribs[:]
         miniribs.sort(key=lambda d: d.name)
-        mribs: list[PlotPart] = []
+        mribs: list[drawing.Part] = []
         for mrib in miniribs[::-1]:
             mrib_plot = self.MiniRibPlot(mrib, self.cell, self.config)
             mribs.append(mrib_plot.flatten())

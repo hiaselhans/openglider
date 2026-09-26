@@ -14,7 +14,6 @@ from openglider.airfoil import get_x_value
 from openglider.materials import Material, cloth
 from openglider.utils.cache import cached_function, hash_list
 from openglider.utils.dataclass import BaseModel, Field
-from openglider.vector.drawing.part import PlotPart
 from openglider.vector.unit import Length, Percentage
 import openglider.glider.cell.panel.cuts as cuts
 
@@ -583,8 +582,6 @@ class Panel(BaseModel):
     
     @cached_function("cut_front", "cut_back")
     def get_flattened(self, cell: Cell, midribs: int, cut_types: dict[PANELCUT_TYPES, type[cuts.Cut]] | None = None) -> FlattenedPanel:
-        plotpart = PlotPart(material_code=str(self.material), name=self.name)
-
         if cut_types is None:
             _cut_types: dict[PANELCUT_TYPES, type[cuts.Cut]] = {
                 PANELCUT_TYPES.folded: cuts.SimpleCut,
@@ -655,8 +652,6 @@ class Panel(BaseModel):
         envelope_nodes.append(envelope_nodes[0])
 
         envelope = openglider.rs.vector.PolyLine2D(envelope_nodes)
-
-        plotpart.layers["envelope"].append(envelope)
 
         return FlattenedPanel(
             panel=self,

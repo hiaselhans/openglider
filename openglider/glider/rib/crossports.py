@@ -4,12 +4,12 @@ import logging
 from typing import TYPE_CHECKING, ClassVar
 
 import openglider.rs
+from openglider.rs import drawing
 from openglider.airfoil import Profile2D
 
 from openglider.mesh import Mesh
 from openglider.utils.cache import cached_function
 from openglider.utils.dataclass import BaseModel
-from openglider.vector.drawing import PlotPart
 from openglider.vector.polygon import Ellipse
 from openglider.vector.unit import Angle, Length, Percentage
 from pydantic import ConfigDict
@@ -59,14 +59,15 @@ class RibHoleBase(BaseModel):
         hole = self.get_curves(rib, num=num)
         return [rib.align_all(c) for c in hole]
 
-    def get_flattened(self, rib: Rib, num: int=80, layer_name: str="cuts") -> PlotPart:
+    def get_flattened(self, rib: Rib, num: int=80, layer_name: str="cuts") -> drawing.Part:
         curves = [line.scale(rib.chord) for line in self.get_curves(rib, num)]
         
-        pp = PlotPart()
-        pp.layers[layer_name] += curves
+        pp = drawing.Part()
+        for curve in curves:
+            pp.add_line(layer_name, curve)
         return pp
     
-    def get_parts(self, rib: Rib) -> list[PlotPart]:
+    def get_parts(self, rib: Rib) -> list[drawing.Part]:
         return []
     
     def get_mesh(self, rib: Rib) -> Mesh | None:

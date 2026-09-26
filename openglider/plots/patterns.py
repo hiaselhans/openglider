@@ -55,12 +55,12 @@ class PatternsNew:
     def _get_sketches(self) -> list[drawing.Layout]:
         import openglider.plots.sketches as sketch
         shapeplot = sketch.ShapePlot(self.project)
-        design_upper = shapeplot.copy().draw_design(lower=True)
+        design_upper = shapeplot.copy().draw_design(lower=True, fill=False)
         design_upper.draw_cell_names()
-        design_lower = shapeplot.copy().draw_design(lower=False)
+        design_lower = shapeplot.copy().draw_design(lower=False, fill=False)
 
         lineplan = shapeplot.copy()
-        lineplan.draw_design(lower=True)
+        lineplan.draw_design(lower=True, fill=False)
         lineplan.draw_attachment_points()
         lineplan.draw_rib_names()
 
@@ -76,28 +76,21 @@ class PatternsNew:
 
         drawings: list[drawing.Layout] = [design_upper.drawing, design_lower.drawing, lineplan.drawing, diagonals.drawing, straps.drawing]
 
-        def _layout_width(layout: drawing.Layout) -> float:
-            bbox = layout.bbox()
-            if bbox is None:
-                return 0.0
-            min_x, _, max_x, _ = bbox
-            return max_x - min_x
-
-        drawings_width = max([_layout_width(dwg) for dwg in drawings], default=0.0)
+        drawings_width = max([dwg.width for dwg in drawings], default=0.0)
 
         # put name and date inside the patterns
         p1 = openglider.rs.vector.Vector2D([0., 0.])
         p2 = openglider.rs.vector.Vector2D([drawings_width, 0.])
 
-        def get_text(content: str, valign: int) -> drawing.Part:
-            text = drawing.Text(content, p1, p2, valign=valign)
+        def get_text(content: str) -> drawing.Part:
+            text = drawing.Text(content, p1, p2, size=0.1, align=-1, valign=1)
             plotpart = drawing.Part()
             plotpart.add_text("text", text)
             return plotpart
 
-        text_name = get_text(self.project.name or "unnamed", valign=1)
+        text_name = get_text(self.project.name or "unnamed")
         date_str = datetime.datetime.now().strftime("%d.%m.%Y")
-        text_date = get_text(date_str, valign=0)
+        text_date = get_text(date_str)
 
         drawings += [
             drawing.Layout([p]) for p in [text_date, text_name]
@@ -118,36 +111,9 @@ class PatternsNew:
             
         plots.unwrap()
         self.weight = plots.weight
-        all_patterns = self._legacy_to_rs_layout(plots.get_all_grouped())
+        all_patterns = plots.get_all_grouped()
 
         return all_patterns
-
-    @staticmethod
-    def _legacy_to_rs_layout(layout: Any) -> drawing.Layout:
-        if isinstance(layout, drawing.Layout):
-            return layout
-
-        rs_parts: list[drawing.Part] = []
-
-        for legacy_part in layout.parts:
-            rs_layers: dict[str, drawing.Layer] = {}
-            for layer_name, legacy_layer in legacy_part.layers.items():
-                style = drawing.LayerStyle(
-                    stroke=legacy_layer.stroke,
-                    stroke_width=legacy_layer.stroke_width,
-                    visible=legacy_layer.visible,
-                )
-                rs_layers[layer_name] = drawing.Layer(lines=list(legacy_layer), style=style)
-
-            rs_parts.append(
-                drawing.Part(
-                    layers=rs_layers,
-                    name=legacy_part.name,
-                    material_code=legacy_part.material_code,
-                )
-            )
-
-        return drawing.Layout(rs_parts)
 
     def unwrap(self, outdir: Path | str) -> None:
         if not isinstance(outdir, Path):
@@ -157,14 +123,15 @@ class PatternsNew:
 
         self.logger.info("create sketches")
         drawings = self._get_sketches()
-        designs = drawing.Layout.stack_column(drawings, self.config.patterns_align_dist_y)
+        designs = drawing.Layout.stack_column(drawings, self.config.patterns_align_dist_y, center_x=False)
 
         self.logger.info("create plots")
         all_patterns = self._get_plotfile()
-        all_patterns.append_left(designs, distance=self.config.patterns_align_dist_x*2)
+        all_patterns = all_patterns.append_left(designs, distance=self.config.patterns_align_dist_x*2)
 
         all_patterns = all_patterns.scale(1000)
         all_patterns.export_dxf(str(outdir / "plots_all.dxf"))
+        all_patterns.export_svg(str(outdir / "plots_all.svg"))
 
         sketches = openglider.plots.sketches.get_all_plots(self.project)
 

@@ -1,8 +1,8 @@
 from typing import Any, Literal
 
 import openglider.rs
+from openglider.rs import drawing
 
-from openglider.vector.drawing.part import PlotPart
 from openglider.vector.unit import Length
 
 text_vectors: dict[str, list[list[float]]] = {
@@ -154,6 +154,9 @@ class Text:
 
         return vectors
 
-    def get_plotpart(self, replace_unknown: bool=True) -> PlotPart:
+    def get_plotpart(self, replace_unknown: bool=True) -> drawing.Part:
         vectors = self.get_vectors(replace_unknown)
-        return PlotPart(vectors)
+        part = drawing.Part()
+        for line in vectors:
+            part.add_line("cuts", line)
+        return part

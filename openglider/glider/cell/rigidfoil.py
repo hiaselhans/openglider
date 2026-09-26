@@ -4,12 +4,12 @@ import math
 from typing import TYPE_CHECKING
 
 import openglider.rs
+from openglider.rs import drawing
 from openglider.glider.cell import cell
 from openglider.glider.cell.panel import cuts
 from openglider.mesh import Mesh
 from openglider.glider.cell.panel.panel import PANELCUT_TYPES, FlattenedPanel
 from openglider.utils.dataclass import dataclass
-import openglider.vector.drawing
 from openglider.vector.unit import Length, Percentage
 
 if TYPE_CHECKING:
@@ -120,8 +120,8 @@ class PanelRigidFoil:
 
         return Mesh.from_indexed(nodes, {"PanelRigidFoil": [((i, i+1), {}) for i in range(len(nodes)-1)]}, name="PanelRigidFoil")
 
-    def get_flattened(self, cell: Cell, midribs: int, cut_types: dict[PANELCUT_TYPES, type[cuts.Cut]] | None) -> tuple[openglider.vector.drawing.PlotPart, dict[Panel, list[openglider.rs.vector.PolyLine2D]]]:
-        dwg = openglider.vector.drawing.PlotPart(material_code="rigidfoil")
+    def get_flattened(self, cell: Cell, midribs: int, cut_types: dict[PANELCUT_TYPES, type[cuts.Cut]] | None) -> tuple[drawing.Part, dict[Panel, list[openglider.rs.vector.PolyLine2D]]]:
+        dwg = drawing.Part(material_code="rigidfoil")
         panels = list(sorted(cell.panels, key=lambda p: p.mean_x()))
         
         # check lengths for each panels
@@ -162,11 +162,12 @@ class PanelRigidFoil:
             # add lines
             for i in range(len(current_section)+1):
                 x = current_section_offset + sum(lengths[:i])
-                dwg.layers["marks"].append(
+                dwg.add_line(
+                    "marks",
                     openglider.rs.vector.PolyLine2D([
                         openglider.rs.vector.Vector2D([x, -self.channel_width.si/2]),
                         openglider.rs.vector.Vector2D([x, self.channel_width.si/2]),
-                    ])
+                    ]),
                 )
             
             # add marks
@@ -176,11 +177,13 @@ class PanelRigidFoil:
             mark_distance = 0.002 # 2mm
 
             for mark_position in mark_positions:
-                dwg.layers["L0"].append(
-                    openglider.rs.vector.PolyLine2D([openglider.rs.vector.Vector2D([current_section_offset + mark_position, -mark_distance])])
+                dwg.add_line(
+                    "L0",
+                    openglider.rs.vector.PolyLine2D([openglider.rs.vector.Vector2D([current_section_offset + mark_position, -mark_distance])]),
                 )
-                dwg.layers["L0"].append(
-                    openglider.rs.vector.PolyLine2D([openglider.rs.vector.Vector2D([current_section_offset + mark_position, mark_distance/2])])
+                dwg.add_line(
+                    "L0",
+                    openglider.rs.vector.PolyLine2D([openglider.rs.vector.Vector2D([current_section_offset + mark_position, mark_distance/2])]),
                 )
 
             # add to panels
@@ -236,7 +239,7 @@ class PanelRigidFoil:
             openglider.rs.vector.Vector2D([-self.pocket_length.si, self.channel_width.si/2]),
         ]).close()
 
-        dwg.layers["cuts"].append(outline)
+        dwg.add_line("cuts", outline)
 
         self.total_length = current_section_offset
 

@@ -1,6 +1,7 @@
-use dxf::entities::{Entity, EntityType, LwPolyline, Text as DxfTextEntity};
-use dxf::enums::{HorizontalTextJustification, VerticalTextJustification};
+use dxf::entities::{Entity, EntityType, LwPolyline as DxfLwPolylineEntity, ModelPoint as DxfPointEntity, Text as DxfTextEntity};
+use dxf::enums::{AcadVersion, HorizontalTextJustification, VerticalTextJustification};
 use dxf::tables::Layer as DxfLayer;
+use dxf::Color;
 use dxf::{Drawing as DxfDrawing, LwPolylineVertex, Point, Vector};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -8,7 +9,7 @@ use pyo3::types::PyAny;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
-use svg::node::element::{Group, Polyline, Text as SvgText};
+use svg::node::element::{Circle, Group, Polyline, Text as SvgText};
 use svg::Document;
 
 use crate::vector::signature::*;
@@ -170,14 +171,115 @@ fn dxf_text_anchor(text: &Text) -> Point {
     vector2d_to_point(anchor)
 }
 
-fn polyline_to_lwpolyline(line: &PolyLine2D) -> Option<LwPolyline> {
+fn parse_hex_rgb(value: &str) -> Option<(u8, u8, u8)> {
+    let text = value.trim();
+    let hex = text.strip_prefix('#')?;
+    if hex.len() != 6 {
+        return None;
+    }
+
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some((r, g, b))
+}
+
+fn aci_from_rgb(r: u8, g: u8, b: u8) -> u8 {
+    // Approximate CSS RGB to a reasonable AutoCAD Color Index.
+    if r < 32 && g < 32 && b < 32 {
+        return 7;
+    }
+    if r > 223 && g > 223 && b > 223 {
+        return 7;
+    }
+
+    let max_channel = r.max(g).max(b);
+    let min_channel = r.min(g).min(b);
+    let chroma = max_channel - min_channel;
+
+    if chroma < 24 {
+        return 8;
+    }
+
+    if r >= g && r >= b {
+        if g > 160 && b < 96 {
+            30
+        } else if b > 160 && g < 96 {
+            210
+        } else {
+            1
+        }
+    } else if g >= r && g >= b {
+        if r > 160 && b < 96 {
+            50
+        } else if b > 160 && r < 96 {
+            130
+        } else {
+            3
+        }
+    } else if r > 160 && g > 160 {
+        170
+    } else {
+        5
+    }
+}
+
+fn stroke_to_rgb(stroke: &Option<String>) -> Option<(u8, u8, u8)> {
+    let stroke = stroke.as_ref()?;
+    let value = stroke.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "black" => Some((0, 0, 0)),
+        "white" => Some((255, 255, 255)),
+        "gray" | "grey" => Some((128, 128, 128)),
+        "red" => Some((255, 0, 0)),
+        "yellow" => Some((255, 255, 0)),
+        "green" => Some((0, 255, 0)),
+        "cyan" => Some((0, 255, 255)),
+        "blue" => Some((0, 0, 255)),
+        "magenta" => Some((255, 0, 255)),
+        _ => parse_hex_rgb(&value),
+    }
+}
+
+fn stroke_to_aci(stroke: &Option<String>) -> u8 {
+    stroke_to_rgb(stroke)
+        .map(|(r, g, b)| aci_from_rgb(r, g, b))
+        .unwrap_or(7)
+}
+
+fn stroke_width_to_lineweight(stroke_width: f64) -> i16 {
+    // DXF stores lineweight in 1/100 mm and expects values in the 0..211 range.
+    let width = if stroke_width.is_finite() { stroke_width } else { 0.25 };
+    let raw = (width * 100.0).round() as i16;
+    raw.clamp(0, 211)
+}
+
+fn dxf_truecolor(stroke: &Option<String>) -> i32 {
+    if let Some((r, g, b)) = stroke_to_rgb(stroke) {
+        ((r as i32) << 16) | ((g as i32) << 8) | (b as i32)
+    } else {
+        0
+    }
+}
+
+fn polyline_to_lwpolyline(line: &PolyLine2D) -> Option<DxfLwPolylineEntity> {
     if line.nodes.len() < 2 {
         return None;
     }
 
-    let mut polyline = LwPolyline::default();
-    polyline.vertices = line
-        .nodes
+    let mut polyline = DxfLwPolylineEntity::default();
+    let mut end = line.nodes.len();
+    let is_closed = line.nodes.len() > 2
+        && line.nodes.first().map(|point| point.x) == line.nodes.last().map(|point| point.x)
+        && line.nodes.first().map(|point| point.y) == line.nodes.last().map(|point| point.y);
+
+    // Closed polylines should not duplicate start/end vertices; closure is encoded via flags.
+    if is_closed {
+        end -= 1;
+        polyline.set_is_closed(true);
+    }
+
+    polyline.vertices = line.nodes[..end]
         .iter()
         .map(|point| LwPolylineVertex {
             x: point.x,
@@ -188,34 +290,69 @@ fn polyline_to_lwpolyline(line: &PolyLine2D) -> Option<LwPolyline> {
             bulge: 0.0,
         })
         .collect();
+
     Some(polyline)
 }
 
-fn dxf_line_entity(line: &PolyLine2D, layer_name: &str) -> Option<Entity> {
-    let polyline = polyline_to_lwpolyline(line)?;
+fn dxf_line_entities(line: &PolyLine2D, layer_name: &str, layer_style: &LayerStyle) -> Vec<Entity> {
+    if line.nodes.is_empty() {
+        return Vec::new();
+    }
+
+    let aci = stroke_to_aci(&layer_style.stroke);
+    let lineweight = stroke_width_to_lineweight(layer_style.stroke_width);
+    let truecolor = dxf_truecolor(&layer_style.stroke);
+
+    if line.nodes.len() == 1 {
+        let mut entity = Entity::new(EntityType::ModelPoint(DxfPointEntity {
+            location: vector2d_to_point(line.nodes[0]),
+            ..DxfPointEntity::default()
+        }));
+        entity.common.layer = layer_name.to_string();
+        entity.common.color = Color::from_index(aci);
+        entity.common.lineweight_enum_value = lineweight;
+        entity.common.color_24_bit = truecolor;
+        return vec![entity];
+    }
+
+    let polyline = match polyline_to_lwpolyline(line) {
+        Some(polyline) => polyline,
+        None => return Vec::new(),
+    };
+
     let mut entity = Entity::new(EntityType::LwPolyline(polyline));
     entity.common.layer = layer_name.to_string();
-    Some(entity)
+    entity.common.color = Color::from_index(aci);
+    entity.common.lineweight_enum_value = lineweight;
+    entity.common.color_24_bit = truecolor;
+    return vec![entity];
 }
 
 fn dxf_text_entity(text: &Text, layer_name: &str, layer_style: &LayerStyle) -> Entity {
+    let anchor = dxf_text_anchor(text);
+    let aci = stroke_to_aci(&layer_style.stroke);
+    let lineweight = stroke_width_to_lineweight(layer_style.stroke_width);
+    let truecolor = dxf_truecolor(&layer_style.stroke);
     let mut entity = Entity::new(EntityType::Text(DxfTextEntity {
         value: text.text.clone(),
-        location: dxf_text_anchor(text),
-        text_height: layer_style.font_size.unwrap_or_else(|| text.font_size()),
+        location: anchor.clone(),
+        text_height: layer_style.font_size.unwrap_or_else(|| text.letter_height()),
         rotation: (text.p2.y - text.p1.y).atan2(text.p2.x - text.p1.x).to_degrees(),
         relative_x_scale_factor: 1.0,
         oblique_angle: 0.0,
-        text_style_name: layer_style.font_family.clone().unwrap_or_default(),
+        text_style_name: layer_style.font_family.clone().unwrap_or_else(|| "STANDARD".to_string()),
         text_generation_flags: 0,
         horizontal_text_justification: dxf_horizontal_justification(text.align),
-        second_alignment_point: vector2d_to_point(text.p2),
+        second_alignment_point: anchor,
         normal: Vector::z_axis(),
         vertical_text_justification: dxf_vertical_justification(text.valign),
         thickness: 0.0,
         ..DxfTextEntity::default()
     }));
     entity.common.layer = layer_name.to_string();
+    entity.common.color = Color::from_index(aci);
+    entity.common.lineweight_enum_value = lineweight;
+    entity.common.color_24_bit = truecolor;
     entity
 }
 
@@ -254,7 +391,7 @@ impl LayerStyle {
     fn scaled(&self, factor: f64) -> Self {
         Self {
             stroke: self.stroke.clone(),
-            stroke_width: if factor.abs() > 0.0 { self.stroke_width / factor } else { self.stroke_width },
+            stroke_width: self.stroke_width,
             fill: self.fill.clone(),
             font_size: self.font_size.map(|font_size| if factor.abs() > 0.0 { font_size / factor } else { font_size }),
             font_family: self.font_family.clone(),
@@ -383,23 +520,27 @@ impl Text {
         let normal = self.normal();
         let text_width = self.font_size() * self.text.chars().count() as f64;
         let letter_height = self.letter_height();
-        let align = normalize_text_align(self.align);
-        let base_factor = (align + 1.0) * 0.5;
-        let base = translate_point(
-            self.p1,
-            scale_point(Vector2D { x: self.p2.x - self.p1.x, y: self.p2.y - self.p1.y }, base_factor),
-        );
-        let vertical_offset = letter_height * (self.valign - 0.5);
-        let start = translate_point(base, scale_point(normal, vertical_offset));
-        let end = translate_point(start, scale_point(direction, text_width));
-        let top = translate_point(start, scale_point(normal, letter_height));
-        let top_end = translate_point(end, scale_point(normal, letter_height));
+        let anchor = self.anchor_point();
+
+        // Keep bbox semantics aligned with anchor + valign behavior used by SVG/DXF output.
+        let (normal_min, normal_max) = if self.valign >= 0.75 {
+            (-letter_height, 0.0)
+        } else if self.valign <= 0.25 {
+            (0.0, letter_height)
+        } else {
+            (-0.5 * letter_height, 0.5 * letter_height)
+        };
+
+        let lower = translate_point(anchor, scale_point(normal, normal_min));
+        let upper = translate_point(anchor, scale_point(normal, normal_max));
+        let lower_end = translate_point(lower, scale_point(direction, text_width));
+        let upper_end = translate_point(upper, scale_point(direction, text_width));
 
         Some((
-            start.x.min(end.x).min(top.x).min(top_end.x),
-            start.x.max(end.x).max(top.x).max(top_end.x),
-            start.y.min(end.y).min(top.y).min(top_end.y),
-            start.y.max(end.y).max(top.y).max(top_end.y),
+            lower.x.min(upper.x).min(lower_end.x).min(upper_end.x),
+            lower.x.max(upper.x).max(lower_end.x).max(upper_end.x),
+            lower.y.min(upper.y).min(lower_end.y).min(upper_end.y),
+            lower.y.max(upper.y).max(lower_end.y).max(upper_end.y),
         ))
     }
 
@@ -610,14 +751,27 @@ impl Layer {
         for line in &self.lines {
             let stroke = self.style.stroke.as_deref().unwrap_or("black");
             let fill = self.style.fill.as_deref().unwrap_or("none");
-            let polyline = Polyline::new()
-                .set("points", svg_points(&line.nodes))
-                .set("stroke", stroke)
-                .set("stroke-width", self.style.stroke_width)
-                .set("fill", fill)
-                .set("vector-effect", "non-scaling-stroke")
-                .set("class", layer_classes(layer_name, material_code));
-            group = group.add(polyline);
+            if line.nodes.len() == 1 {
+                let radius = (self.style.stroke_width * 0.5).max(0.25);
+                let point = Circle::new()
+                    .set("cx", line.nodes[0].x)
+                    .set("cy", -line.nodes[0].y)
+                    .set("r", radius)
+                    .set("stroke", stroke)
+                    .set("stroke-width", self.style.stroke_width)
+                    .set("fill", stroke)
+                    .set("class", layer_classes(layer_name, material_code));
+                group = group.add(point);
+            } else {
+                let polyline = Polyline::new()
+                    .set("points", svg_points(&line.nodes))
+                    .set("stroke", stroke)
+                    .set("stroke-width", self.style.stroke_width)
+                    .set("fill", fill)
+                    .set("vector-effect", "non-scaling-stroke")
+                    .set("class", layer_classes(layer_name, material_code));
+                group = group.add(polyline);
+            }
         }
 
         for text in &self.texts {
@@ -738,7 +892,11 @@ impl Default for Part {
 
 impl Part {
     fn layer_mut_or_insert(&mut self, layer_name: &str) -> &mut Layer {
-        self.layers.entry(layer_name.to_string()).or_default()
+        let layer = self.layers.entry(layer_name.to_string()).or_default();
+        if layer.style.stroke.is_none() {
+            layer.style.stroke = Some("black".to_string());
+        }
+        layer
     }
 
     fn bbox_impl(&self) -> Option<(f64, f64, f64, f64)> {
@@ -1078,6 +1236,8 @@ impl Layout {
 
     fn dxf_drawing(&self) -> DxfDrawing {
         let mut drawing = DxfDrawing::new();
+        // LWPOLYLINE requires R14+; keep parity with legacy exporter (AC1015/R2000).
+        drawing.header.version = AcadVersion::R2000;
         let mut added_layers = BTreeSet::new();
 
         for part in &self.parts {
@@ -1089,12 +1249,13 @@ impl Layout {
                 if added_layers.insert(layer_name.clone()) {
                     let mut dxf_layer = DxfLayer::default();
                     dxf_layer.name = layer_name.clone();
+                    dxf_layer.color = Color::from_index(stroke_to_aci(&layer.style.stroke));
                     dxf_layer.normalize();
                     drawing.add_layer(dxf_layer);
                 }
 
                 for line in &layer.lines {
-                    if let Some(entity) = dxf_line_entity(line, layer_name) {
+                    for entity in dxf_line_entities(line, layer_name, &layer.style) {
                         drawing.add_entity(entity);
                     }
                 }
