@@ -15,14 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 class RibPlotLayers(BaseModel):
+    outline: bool=True
+    L0: bool=True
+    sewing: bool=True
+    
     crossports: bool=True
     rigidfoils: bool=True
-    sewing: bool=True
 
-    laser: bool=False
-    text: bool=False
-    marks: bool=False
-    outline: bool=False
+    text: bool=True
+    marks: bool=True
 
 class RibPlotConfig(BaseModel):
     layers: RibPlotLayers=Field(default_factory=RibPlotLayers)

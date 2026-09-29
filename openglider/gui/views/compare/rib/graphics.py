@@ -45,23 +45,23 @@ class GliderRibPlots:
                 rib = glider.ribs[rib_no]
                 plot = RibPlotWithLayers(rib)
                 plot.flatten(glider, add_rigidfoils_to_plot=False)
-                for layer_name in config.__annotations__.keys():
-                    if not getattr(config, layer_name) and layer_name in plot.plotpart.layers:
-                        plot.plotpart.layers.pop(layer_name)
-                
                 plot.plotpart.scale(1/rib.chord)
                 dwg = drawing.Layout()
-                part = drawing.Part()
+                part = drawing.Part(name=plot.plotpart.name, material_code=plot.plotpart.material_code)
 
                 for layer_name in plot.plotpart.layers.keys():
+                    if not getattr(config, layer_name, True):
+                        continue
+
                     layer_src = plot.plotpart.layers[layer_name]
                     with part.layer(layer_name) as layer_dst:
+                        src_style = layer_src.style
                         layer_dst.style.stroke = f"#{self.color.hex()}"
-                        layer_dst.style.visible = layer_src.visible
-                        layer_dst.style.stroke_width = layer_src.stroke_width
-                        if layer_src.stroke:
-                            layer_dst.style.stroke = layer_src.stroke
-                        for polyline in layer_src:
+                        layer_dst.style.visible = getattr(src_style, "visible", True)
+                        layer_dst.style.stroke_width = src_style.stroke_width
+                        if src_style.stroke:
+                            layer_dst.style.stroke = src_style.stroke
+                        for polyline in layer_src.lines:
                             layer_dst.add_line(polyline)
 
                 dwg.add_part(part)
