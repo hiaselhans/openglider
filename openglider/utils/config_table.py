@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 import types
 from typing import Any, ClassVar, Self, get_origin
 import logging
@@ -54,11 +53,32 @@ class ConfigTable(BaseModel):
         raw_data = cls._migrate_table(raw_data)
         data = {}
 
+        def is_empty_value(value: Any) -> bool:
+            return value is None or (isinstance(value, str) and value.strip() == "")
+
+        def allows_none(tp: type) -> bool:
+            type_origin = typing.get_origin(tp)
+            if type_origin is typing.Union:
+                return any(type_arg is types.NoneType for type_arg in typing.get_args(tp))
+            return False
+
         def convert(raw_value: Any, target_type: type) -> Any:
             adapter = get_adapter(target_type)  # type: ignore[arg-type]
             data_length = 3 if target_type == openglider.rs.vector.Vector3D else 1
+            if data_length > 1:
+                values = list(raw_value)
+                if all(is_empty_value(value) for value in values) and allows_none(target_type):
+                    return None
+                return adapter(values)
 
-            return adapter(raw_value if data_length > 1 else raw_value[0])
+            value = raw_value[0]
+            if is_empty_value(value):
+                if allows_none(target_type):
+                    return None
+                if target_type == str:
+                    return ""
+
+            return adapter(value)
 
         def is_dict_type(tp: type) -> tuple[type, type] | None:
             type_origin = typing.get_origin(tp)
@@ -87,6 +107,13 @@ class ConfigTable(BaseModel):
             if (dict_types := is_dict_type(target_type)) is not None:
                 assert dict_types[0] == str
 
+                if is_empty_value(value[0]):
+                    if allows_none(target_type):
+                        data[key] = None
+                    else:
+                        logger.warning(f"Skipping empty key for dict field '{key}'")
+                    continue
+
                 data.setdefault(key, {})
 
                 dict_key = str(value[0])
@@ -105,6 +132,8 @@ class ConfigTable(BaseModel):
         return cls(**data)
 
     def _serialize_table_value(self, key: str, value: Any) -> list[Any]:
+        if value is None:
+            return [""]
         if isinstance(value, openglider.rs.vector.Vector3D):
             return list(value)
         if isinstance(value, unit.Quantity):
@@ -140,6 +169,16 @@ class ConfigTable(BaseModel):
             if key in excluded:
                 continue
 
+            if isinstance(value, dict):
+                for dict_key, dict_value in value.items():
+                    values = self._serialize_table_value(key, dict_value)
+                    table[row, 0] = key
+                    table[row, 1] = dict_key
+                    for column, column_value in enumerate(values):
+                        table[row, column + 2] = column_value
+                    row += 1
+                continue
+
             values = self._serialize_table_value(key, value)
 
             table[row, 0] = key
@@ -152,6 +191,11 @@ class ConfigTable(BaseModel):
             for key, value in extra_rows:
                 if isinstance(value, list):
                     rows.append((key, value))
+                elif isinstance(value, dict):
+                    for dict_key, dict_value in value.items():
+                        rows.append((key, [dict_key, "" if dict_value is None else dict_value]))
+                elif value is None:
+                    rows.append((key, [""]))
                 else:
                     rows.append((key, [value]))
 

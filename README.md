@@ -1,12 +1,12 @@
-# OpenGlider (airG fork)
+# OpenGlider
 
-This is the airG fork of OpenGlider.
+This is the AIRG version of OpenGlider.
 
-## Main differences to OpenGlider:
+## Main differences to legacy OpenGlider:
 
 - without the freecad gui & dependencies
 - excessive use of Pydantic Models for Physical objects (ribs, cells, panels, etc)
-- added a custom qt-gui with compare functionality but no editing features.
+- added a custom qt-gui with compare functionality & auto-reload but only limited editing features.
 - reduced the use of numpy and use rust internal module instead
 
 ## Try It

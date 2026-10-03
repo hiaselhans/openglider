@@ -228,11 +228,17 @@ class ParametricGlider:
                         continue
 
                 try:
-                    material, color_group = materials[i]
+                    material_entry = materials[i]
                 except (KeyError, IndexError):
                     #logger.warning(f"No material for panel {cell_no}/{i+1}")
                     material = openglider.materials.Material(name="unknown")
                     color_group = None
+                else:
+                    if material_entry is None:
+                        material = None
+                        color_group = None
+                    else:
+                        material, color_group = material_entry
                 
                 i += 1
 
