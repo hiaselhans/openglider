@@ -230,7 +230,6 @@ class SVGTexture:
                     if current_path:
                         subpaths.append(current_path)
                         current_path = []
-                    current = start
                     command = token
                     index += 1
                     continue
@@ -263,7 +262,12 @@ class SVGTexture:
                 target = (x, y) if command == "M" else (current[0] + x, current[1] + y)
                 current = target
                 start = target
-                current_path = [target]
+                if current_path:
+                    current_path.append(target)
+                else:
+                    current_path = [target]
+                # SVG grammar: additional coordinate pairs after moveto are lineto.
+                command = "L" if command == "M" else "l"
             elif command in {"L", "l"}:
                 target = (x, y) if command == "L" else (current[0] + x, current[1] + y)
                 current = target

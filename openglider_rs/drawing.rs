@@ -44,6 +44,25 @@ fn rotate_point(point: Vector2D, angle: f64, center: Vector2D) -> Vector2D {
     }
 }
 
+fn parse_mirror_axis(axis: &str) -> PyResult<char> {
+    match axis.trim().to_ascii_lowercase().as_str() {
+        "x" => Ok('x'),
+        "y" => Ok('y'),
+        "z" => Ok('z'),
+        _ => Err(PyValueError::new_err("invalid mirror axis; expected 'x', 'y', or 'z'")),
+    }
+}
+
+fn mirror_point(point: Vector2D, axis: char) -> Vector2D {
+    match axis {
+        'x' => Vector2D { x: -point.x, y: point.y },
+        'y' => Vector2D { x: point.x, y: -point.y },
+        // Vector2D has no z component, so z-mirroring leaves x/y unchanged.
+        'z' => point,
+        _ => point,
+    }
+}
+
 fn polyline_bbox(polyline: &PolyLine2D) -> Option<(f64, f64, f64, f64)> {
     let mut min_x = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
@@ -608,6 +627,19 @@ impl Text {
             valign: self.valign,
         }
     }
+
+    fn mirrored(&self, axis: char) -> Self {
+        Self {
+            text: self.text.clone(),
+            p1: mirror_point(self.p1, axis),
+            p2: mirror_point(self.p2, axis),
+            size: self.size,
+            height: self.height,
+            space: self.space,
+            align: self.align,
+            valign: self.valign,
+        }
+    }
 }
 
 #[pymethods]
@@ -682,6 +714,12 @@ impl Text {
     fn scale(&self, factor: f64) -> Self {
         self.scaled(factor)
     }
+
+    #[pyo3(signature = (axis = "x"))]
+    fn mirror(&self, axis: &str) -> PyResult<Self> {
+        let axis = parse_mirror_axis(axis)?;
+        Ok(self.mirrored(axis))
+    }
 }
 
 #[pyclass(from_py_object)]
@@ -738,6 +776,28 @@ impl Layer {
                 .collect(),
             texts: self.texts.iter().map(|text| text.scaled(factor)).collect(),
             style: self.style.scaled(factor),
+        }
+    }
+
+    fn has_content_impl(&self) -> bool {
+        !self.lines.is_empty() || !self.texts.is_empty()
+    }
+
+    fn mirrored(&self, axis: char) -> Self {
+        Self {
+            lines: self
+                .lines
+                .iter()
+                .map(|line| PolyLine2D {
+                    nodes: line
+                        .nodes
+                        .iter()
+                        .map(|point| mirror_point(*point, axis))
+                        .collect(),
+                })
+                .collect(),
+            texts: self.texts.iter().map(|text| text.mirrored(axis)).collect(),
+            style: self.style.clone(),
         }
     }
 
@@ -864,6 +924,16 @@ impl Layer {
         self.scaled(factor)
     }
 
+    fn has_content(&self) -> bool {
+        self.has_content_impl()
+    }
+
+    #[pyo3(signature = (axis = "x"))]
+    fn mirror(&self, axis: &str) -> PyResult<Self> {
+        let axis = parse_mirror_axis(axis)?;
+        Ok(self.mirrored(axis))
+    }
+
     fn __repr_svg_(&self) -> String {
         self.to_preview_layout().to_svg_document_with_size(800, 0.0).to_string()
     }
@@ -922,6 +992,16 @@ impl Part {
             .layers
             .iter()
             .map(|(name, layer)| (name.clone(), layer.scaled(factor)))
+            .collect();
+
+        Self { layers, name: self.name.clone(), material_code: self.material_code.clone() }
+    }
+
+    fn mirrored(&self, axis: char) -> Self {
+        let layers = self
+            .layers
+            .iter()
+            .map(|(name, layer)| (name.clone(), layer.mirrored(axis)))
             .collect();
 
         Self { layers, name: self.name.clone(), material_code: self.material_code.clone() }
@@ -1004,6 +1084,10 @@ impl Part {
         self.layer_mut_or_insert(&layer_name).texts.push(text);
     }
 
+    fn pop_layer(&mut self, layer_name: String) -> Option<Layer> {
+        self.layers.remove(&layer_name)
+    }
+
     fn bbox(&self) -> Option<(f64, f64, f64, f64)> {
         self.bbox_impl()
     }
@@ -1025,6 +1109,12 @@ impl Part {
 
     fn scale(&self, factor: f64) -> Self {
         self.scaled(factor)
+    }
+
+    #[pyo3(signature = (axis = "x"))]
+    fn mirror(&self, axis: &str) -> PyResult<Self> {
+        let axis = parse_mirror_axis(axis)?;
+        Ok(self.mirrored(axis))
     }
 
     fn __repr_svg_(&self) -> String {
@@ -1204,6 +1294,12 @@ impl Layout {
         }
     }
 
+    fn mirrored(&self, axis: char) -> Self {
+        Self {
+            parts: self.parts.iter().map(|part| part.mirrored(axis)).collect(),
+        }
+    }
+
     fn svg_viewbox(&self, border: f64) -> (f64, f64, f64, f64) {
         let (min_x, max_x, min_y, max_y) = self.bbox_impl().unwrap_or((0.0, 1.0, 0.0, 1.0));
         let width = (max_x - min_x).max(1e-6);
@@ -1325,6 +1421,12 @@ impl Layout {
         let moved = Layout::moved_to(self, x, y);
         self.parts = moved.parts;
     }
+
+    fn pop_layer_impl(&mut self, layer_name: &str) {
+        for part in &mut self.parts {
+            part.layers.remove(layer_name);
+        }
+    }
 }
 
 #[pymethods]
@@ -1345,6 +1447,10 @@ impl Layout {
 
     fn __deepcopy__(&self, _memo: &Bound<'_, PyAny>) -> Self {
         self.clone()
+    }
+
+    fn pop_layer(&mut self, layer_name: String) {
+        self.pop_layer_impl(&layer_name);
     }
 
     #[staticmethod]
@@ -1481,6 +1587,12 @@ impl Layout {
 
     fn scale(&self, factor: f64) -> Self {
         self.scaled(factor)
+    }
+
+    #[pyo3(signature = (axis = "x"))]
+    fn mirror(&self, axis: &str) -> PyResult<Self> {
+        let axis = parse_mirror_axis(axis)?;
+        Ok(self.mirrored(axis))
     }
 
     #[pyo3(signature = (border = 0.0))]

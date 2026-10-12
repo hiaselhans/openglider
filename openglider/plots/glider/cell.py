@@ -53,7 +53,10 @@ class PanelPlot:
         cut_types = self.config.get_cut_types()
         self.flattened_panel = self.panel.get_flattened(self.cell, self.config.midribs, cut_types=cut_types)
 
-    def flatten(self, extra_marks: list[openglider.rs.vector.PolyLine2D] | None=None) -> drawing.Part:
+    def flatten(
+        self,
+        extra_marks: dict[str, list[openglider.rs.vector.PolyLine2D]] | None = None,
+    ) -> drawing.Part:
         assert self.flattened_panel is not None, "Call prepare() before flatten()"
         self.plotpart = initialize_part_layer_strokes(
             drawing.Part(material_code=str(self.panel.material), name=self.panel.name)
@@ -87,11 +90,12 @@ class PanelPlot:
         ])
 
         if extra_marks is not None:
-            for mark in extra_marks:
-                if len(mark) < 2:
-                    add_line(self.plotpart, "L0", mark.copy())
-                else:
-                    add_line(self.plotpart, "marks", mark.copy())
+            for layer_name, marks in extra_marks.items():
+                for mark in marks:
+                    if len(mark) < 2:
+                        add_line(self.plotpart, "L0", mark.copy())
+                    else:
+                        add_line(self.plotpart, layer_name, mark.copy())
 
         add_line(self.plotpart, "cuts", self.flattened_panel.envelope.copy())
 
@@ -546,7 +550,11 @@ class CellPlotMaker:
             outer_orig=outer_orig
         )
 
-    def get_panels(self, panels: list[Panel] | None=None, extra_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] | None = None) -> list[drawing.Part]:
+    def get_panels(
+        self,
+        panels: list[Panel] | None = None,
+        extra_marks: dict[Panel, dict[str, list[openglider.rs.vector.PolyLine2D]]] | None = None,
+    ) -> list[drawing.Part]:
         cell_panels: list[drawing.Part] = []
 
         if panels is None:
@@ -564,11 +572,17 @@ class CellPlotMaker:
         
         return cell_panels
 
-    def get_panels_lower(self, extra_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] | None = None) -> list[drawing.Part]:
+    def get_panels_lower(
+        self,
+        extra_marks: dict[Panel, dict[str, list[openglider.rs.vector.PolyLine2D]]] | None = None,
+    ) -> list[drawing.Part]:
         panels = [p for p in self.cell.panels if p.is_lower()]
         return self.get_panels(panels, extra_marks=extra_marks)
 
-    def get_panels_upper(self, extra_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] | None = None) -> list[drawing.Part]:
+    def get_panels_upper(
+        self,
+        extra_marks: dict[Panel, dict[str, list[openglider.rs.vector.PolyLine2D]]] | None = None,
+    ) -> list[drawing.Part]:
         panels = [p for p in self.cell.panels if not p.is_lower()]
         return self.get_panels(panels, extra_marks=extra_marks)
 

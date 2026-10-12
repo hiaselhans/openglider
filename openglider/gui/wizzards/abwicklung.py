@@ -167,15 +167,8 @@ class PlotWizzard(Wizard):
             cell = glider_3d.cells[element_index]
             cell_plot = self.plotmaker.CellPlotMaker(cell, config=config)
 
-            _, panel_marks = cell_plot.get_rigidfoils()
-
-            upper_parts = cell_plot.get_panels_upper(extra_marks=panel_marks)
-            lower_parts = cell_plot.get_panels_lower(extra_marks=panel_marks)
-            layout_upper = drawing.Layout.stack_column([drawing.Layout([part]) for part in upper_parts], dy)
-            layout_lower = drawing.Layout.stack_column([drawing.Layout([part]) for part in lower_parts], dy)
-            layout_lower = layout_lower.rotate(180, radians=False, center=None)
-
-            layout = drawing.Layout.stack_row([layout_upper, layout_lower], dx)
+            _, rigidfoil_marks = cell_plot.get_rigidfoils()
+            layout = self.plotmaker.get_panels_for_cell(element_index, extra_marks=rigidfoil_marks)
 
         elif type_str == "Diagonals":
             cell = glider_3d.cells[element_index]

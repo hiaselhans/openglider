@@ -2,6 +2,8 @@ from __future__ import annotations
 import collections
 import logging
 from typing import Any, TypeAlias
+
+from openglider.utils.cache import cached_function
 import openglider.rs
 from openglider.rs import drawing
 
@@ -21,6 +23,8 @@ from openglider.vector.unit import Length
 logger = logging.getLogger(__name__)
 
 PlotPartDict = collections.OrderedDict[Cell, list[drawing.Part]]
+PanelMarkLayers = dict[str, list[openglider.rs.vector.PolyLine2D]]
+PanelMarks = dict[Panel, list[openglider.rs.vector.PolyLine2D]]
 
 class PlotMaker:
     glider_3d: Glider
@@ -102,6 +106,44 @@ class PlotMaker:
         return grouped
 
     @classmethod
+    def _build_panel_export_branches(
+        cls,
+        panels: drawing.Layout,
+    ) -> tuple[drawing.Layout, drawing.Layout | None]:
+        # main area -> remove texture_left layer
+        panels_main = panels.copy()
+        panels_main.pop_layer("texture_left")
+
+        # mirrored side -> remove texture_right layer, mirror and filter parts with texture_left content
+        panels_left = panels.copy()
+        panels_left.pop_layer("texture_right")
+        panels_left_parts: list[drawing.Part] = []
+
+        for part in panels_left.parts:
+            texture_left_layer = part.layers.get("texture_left")
+            if texture_left_layer is not None and texture_left_layer.has_content():
+                panels_left_parts.append(part)
+
+        panels_left.parts = panels_left_parts
+
+        if not panels_left.parts:
+            return panels_main, None
+        
+        panels_left = panels_left.mirror("y")
+        main_bbox = cls._layout_bbox(panels_main)
+        left_bbox = cls._layout_bbox(panels_left)
+
+        main_border = cls._border_part(panels)
+        if main_border is not None:
+            dy = main_bbox[3] - main_bbox[2]
+            panels_left.add_part(main_border.move(openglider.rs.vector.Vector2D([0.0, -dy])))
+
+        y = main_bbox[3] - left_bbox[2]
+        panels_left = panels_left.move(openglider.rs.vector.Vector2D([0.0, y]))        
+
+        return panels_main, panels_left
+
+    @classmethod
     def _border_part(
         cls,
         layout: drawing.Layout,
@@ -162,9 +204,10 @@ class PlotMaker:
 
         return float(mapped[0]), float(mapped[1])
 
-    def _get_texture_panel_marks(self) -> list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]]:
+    @cached_function("glider_3d")
+    def _get_texture_panel_marks(self) -> list[dict[Panel, PanelMarkLayers]]:
         texture_obj = self.glider_3d.texture
-        result: list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]] = [dict() for _ in self.glider_3d.cells]
+        result: list[dict[Panel, PanelMarkLayers]] = [dict() for _ in self.glider_3d.cells]
         if texture_obj is None:
             return result
 
@@ -214,44 +257,125 @@ class PlotMaker:
                 if len(panel_poly) != 4:
                     continue
 
-                src_quad = Quad(
-                    *panel_poly.nodes
-                )
-                dst_quad = Quad(
-                    openglider.rs.vector.Vector2D([float(panel.cut_back.x_left), 0.0]),
-                    openglider.rs.vector.Vector2D([float(panel.cut_back.x_right), 1.0]),
-                    openglider.rs.vector.Vector2D([float(panel.cut_front.x_right), 1.0]),
-                    openglider.rs.vector.Vector2D([float(panel.cut_front.x_left), 0.0]),
-                )
+                mirror_panel_marks = (not self.glider_3d.has_center_cell) or cell_no > 0
 
-                projected_lines: list[openglider.rs.vector.PolyLine2D] = []
+                def project_texture_marks(
+                    source_panel_poly: openglider.rs.vector.PolyLine2D,
+                    source_texture_vectors: list[openglider.rs.vector.PolyLine2D],
+                ) -> list[openglider.rs.vector.PolyLine2D]:
+                    src_quad = Quad(*source_panel_poly.nodes)
+                    dst_quad = Quad(
+                        openglider.rs.vector.Vector2D([float(panel.cut_back.x_left), 0.0]),
+                        openglider.rs.vector.Vector2D([float(panel.cut_back.x_right), 1.0]),
+                        openglider.rs.vector.Vector2D([float(panel.cut_front.x_right), 1.0]),
+                        openglider.rs.vector.Vector2D([float(panel.cut_front.x_left), 0.0]),
+                    )
 
-                for texture_line in texture_vectors:
-                    clipped_segments = texture_line.clip(panel_poly)
-                    if not clipped_segments:
-                        continue
-
-                    for clipped in clipped_segments:
-                        mapped_points: list[tuple[float, float]] = []
-                        for p in clipped:
-                            mapped = self._map_point_from_quad((float(p[0]), float(p[1])), src_quad, dst_quad)
-                            if mapped is not None:
-                                mapped_points.append(mapped)
-
-                        if len(mapped_points) < 2:
+                    projected_lines: list[openglider.rs.vector.PolyLine2D] = []
+                    for texture_line in source_texture_vectors:
+                        clipped_segments = texture_line.clip(source_panel_poly)
+                        if not clipped_segments:
                             continue
 
-                        mapped_points[0] = snap_to_panel_boundary(mapped_points[0], panel)
-                        mapped_points[-1] = snap_to_panel_boundary(mapped_points[-1], panel)
+                        for clipped in clipped_segments:
+                            mapped_points: list[tuple[float, float]] = []
+                            for p in clipped:
+                                mapped = self._map_point_from_quad((float(p[0]), float(p[1])), src_quad, dst_quad)
+                                if mapped is not None:
+                                    mapped_points.append(mapped)
 
-                        projected = pm.panel_plots[panel].get_curve(openglider.rs.vector.PolyLine2D(mapped_points))
-                        if projected is not None and len(projected) >= 2:
-                            projected_lines.append(projected)
+                            if len(mapped_points) < 2:
+                                continue
 
+                            mapped_points[0] = snap_to_panel_boundary(mapped_points[0], panel)
+                            mapped_points[-1] = snap_to_panel_boundary(mapped_points[-1], panel)
+
+                            projected = pm.panel_plots[panel].get_curve(openglider.rs.vector.PolyLine2D(mapped_points))
+                            if projected is not None and len(projected) >= 2:
+                                projected_lines.append(projected)
+
+                    return projected_lines
+
+                panel_layers: PanelMarkLayers = {}
+                projected_lines = project_texture_marks(
+                    panel_poly,
+                    texture_vectors,
+                )
                 if projected_lines:
-                    result[cell_no][panel] = projected_lines
+                    panel_layers["texture_right"] = projected_lines
+
+                if mirror_panel_marks:
+                    mirrored_lines = project_texture_marks(
+                        panel_poly.mirror(),
+                        texture_vectors,
+                    )
+                    if mirrored_lines:
+                        panel_layers["texture_left"] = mirrored_lines
+
+                if panel_layers:
+                    result[cell_no][panel] = panel_layers
 
         return result
+
+    def _get_cell_panel_marks(
+        self,
+        cell_no: int,
+        extra_marks: PanelMarks | None = None,
+    ) -> dict[Panel, PanelMarkLayers]:
+        merged_marks: dict[Panel, PanelMarkLayers] = {}
+        texture_marks = self._get_texture_panel_marks()
+
+        if cell_no < len(texture_marks) and texture_marks[cell_no]:
+            merged_marks.update({
+                panel: {layer_name: marks[:] for layer_name, marks in panel_layers.items()}
+                for panel, panel_layers in texture_marks[cell_no].items()
+            })
+
+        if extra_marks:
+            for panel, marks in extra_marks.items():
+                merged_marks.setdefault(panel, {})
+                merged_marks[panel].setdefault("marks", [])
+                merged_marks[panel]["marks"] += marks
+
+        return merged_marks
+
+    def get_panels_for_cell(
+        self,
+        cell_no: int,
+        extra_marks: PanelMarks | None = None,
+    ) -> drawing.Layout:
+        cell = self.glider_3d.cells[cell_no]
+        pm = self._get_cellplotmaker(cell)
+        merged_marks = self._get_cell_panel_marks(cell_no, extra_marks=extra_marks)
+        panel_marks = merged_marks if merged_marks else None
+
+        lower = pm.get_panels_lower(extra_marks=panel_marks)
+        upper = pm.get_panels_upper(extra_marks=panel_marks)
+        layout_lower = drawing.Layout.stack_column(
+            [drawing.Layout([part]) for part in lower],
+            self.config.patterns_align_dist_y,
+        )
+        layout_upper = drawing.Layout.stack_column(
+            [drawing.Layout([part]) for part in upper],
+            self.config.patterns_align_dist_y,
+        )
+
+        if self.config.layout_seperate_panels:
+            layout_lower = layout_lower.rotate(180, radians=False, center=None)
+            return drawing.Layout.stack_row([layout_lower, layout_upper], 2 * self.config.patterns_align_dist_x)
+
+        return drawing.Layout.stack_column(
+            [
+                drawing.Layout.stack_row(
+                    [drawing.Layout([part]) for part in row],
+                    self.config.patterns_align_dist_x,
+                )
+                for row in [upper, lower]
+                if row
+            ],
+            self.config.patterns_align_dist_y,
+            center_x=False,
+        )
 
     def get_panels(self, extra_marks: list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]] | None = None) -> drawing.Layout:
         self.panels = drawing.Layout()
@@ -260,20 +384,13 @@ class PlotMaker:
 
         weight = MaterialUsage()
 
-        texture_marks = self._get_texture_panel_marks()
-
         for cell_no, cell in enumerate(self.glider_3d.cells):
             logger.info(f"Plotting Cell: {cell_no}")
             pm = self._get_cellplotmaker(cell)
-            merged_marks: dict[Panel, list[openglider.rs.vector.PolyLine2D]] = {}
-
-            if cell_no < len(texture_marks) and texture_marks[cell_no]:
-                merged_marks.update(texture_marks[cell_no])
-
-            if extra_marks is not None and cell_no < len(extra_marks) and extra_marks[cell_no]:
-                for panel, marks in extra_marks[cell_no].items():
-                    merged_marks.setdefault(panel, [])
-                    merged_marks[panel] += marks
+            merged_marks = self._get_cell_panel_marks(
+                cell_no,
+                extra_marks=extra_marks[cell_no] if extra_marks is not None and cell_no < len(extra_marks) else None,
+            )
 
             _extra_marks = merged_marks if merged_marks else None
             lower = pm.get_panels_lower(extra_marks=_extra_marks)
@@ -414,6 +531,7 @@ class PlotMaker:
         self.ribs = [rib.rotate(-90, radians=False, center=None) for rib in self.ribs]
 
         panels = self.panels
+        panels_main, panels_left = self._build_panel_export_branches(panels)
         ribs = drawing.Layout.stack_row([drawing.Layout([rib]) for rib in self.ribs], self.config.patterns_align_dist_x)
 
         def stack_grid(dct: PlotPartDict) -> drawing.Layout:
@@ -435,7 +553,7 @@ class PlotMaker:
         straps = straps_upper.append_left(straps_lower, distance=self.config.patterns_align_dist_x)
         rigidfoils = drawing.Layout.stack_row([drawing.Layout([part]) for part in self.rigidfoils], self.config.patterns_align_dist_x)
         miniribs = stack_grid(self.miniribs)
-        panels_bbox = panels.bbox()
+        panels_bbox = panels_main.bbox()
         panels_x_bounds = None if panels_bbox is None else (panels_bbox[0], panels_bbox[1])
 
         def group(layout: drawing.Layout, prefix: str) -> list[drawing.Layout]:
@@ -452,15 +570,17 @@ class PlotMaker:
                 results.append(material_layout)
             return results
 
-        panels_grouped = group(panels.copy(), "panels")
+        panels_grouped = group(panels_main.copy(), "panels")
         ribs_grouped = group(ribs, "ribs")
         dribs_grouped = group(dribs, "dribs")
         straps_grouped = group(straps, "straps")
         miniribs_grouped = group(miniribs, "miniribs")
 
-        self._add_label(panels, "panels_all")
+        self._add_label(panels_main, "panels_all")
 
-        all_layouts = [panels]
+        all_layouts = [panels_main]
+        if panels_left is not None:
+            all_layouts.append(panels_left)
         all_layouts += panels_grouped
         all_layouts += ribs_grouped
         all_layouts += dribs_grouped
@@ -478,7 +598,7 @@ class PlotMaker:
             extra_parts = drawing.Layout.stack_row([drawing.Layout([part]) for part in self.extra_parts], self.config.patterns_align_dist_x)
             all_layouts += group(extra_parts, "extra_parts")
 
-        return drawing.Layout.stack_column(all_layouts, 0.1, center_x=False)
+        return drawing.Layout.stack_column(all_layouts, 0.1, center_x=True)
 
     def unwrap(self) -> PlotMaker:
         _, extra_marks = self.get_rigidfoils()

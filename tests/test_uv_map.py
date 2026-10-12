@@ -58,3 +58,30 @@ class UVMapStackedLayoutTest(GliderTestCase):
         self.assertAlmostEqual(second[0][1], 1.6)
         self.assertAlmostEqual(second[1][0], 0.7)
         self.assertAlmostEqual(second[1][1], 1.8)
+
+    def test_svg_texture_compound_closed_path_keeps_all_subpaths(self) -> None:
+        svg = '''
+        <svg width="10" height="10" viewBox="0 0 10 10">
+            <path d="M 1 1 9 1 9 9 1 9 z M 3 3 7 3 7 7 3 7 z"/>
+        </svg>
+        '''
+
+        texture = SVGTexture(svg_data=svg, dpi=300)
+        vectors = texture.get_vectors((0.0, 1.0, 0.0, 1.0))
+
+        self.assertEqual(len(vectors), 2)
+
+        outer = list(vectors[0])
+        inner = list(vectors[1])
+
+        self.assertEqual(len(outer), 5)
+        self.assertAlmostEqual(outer[0][0], 0.1)
+        self.assertAlmostEqual(outer[0][1], 0.9)
+        self.assertAlmostEqual(outer[-1][0], outer[0][0])
+        self.assertAlmostEqual(outer[-1][1], outer[0][1])
+
+        self.assertEqual(len(inner), 5)
+        self.assertAlmostEqual(inner[0][0], 0.3)
+        self.assertAlmostEqual(inner[0][1], 0.7)
+        self.assertAlmostEqual(inner[-1][0], inner[0][0])
+        self.assertAlmostEqual(inner[-1][1], inner[0][1])
