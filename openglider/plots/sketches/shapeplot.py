@@ -557,19 +557,21 @@ class ShapePlot:
             line_start = line.nodes[0] + (line.nodes[1] - line.nodes[0]) * 0.5
             line_end = line_start + openglider.rs.vector.Vector2D([0.1, 0])
 
-            text = rs_drawing.Text(
-                glider_line.name,
-                line_start,
-                line_end,
-                size=text_size,
-                align=-1,
-                valign=0,
-                )
             with pp.layer("lines") as layer:
                 layer.style.stroke="black"
                 layer.style.stroke_width=0.25
                 layer.add_line(line)
-            pp.add_text("text", text)
+
+            if add_text:
+                text = rs_drawing.Text(
+                    glider_line.name,
+                    line_start,
+                    line_end,
+                    size=text_size,
+                    align=-1,
+                    valign=0,
+                    )
+                pp.add_text("text", text)
 
             self.drawing.add_part(pp)
 
