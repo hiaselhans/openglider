@@ -75,7 +75,7 @@ class ShapePlot:
     attachment_point_mark = marks.Cross(name="attachment_point", rotation=np.pi/4)
     a4_width_mm = 297.0
     attachment_text_size_mm = 1.0
-    line_text_size_mm = 1.0
+    line_text_size_mm = 2.0
     attachment_text_offset_mm = 1.0
 
     config: ShapePlotConfig | None = None
@@ -525,9 +525,8 @@ class ShapePlot:
                         direction += diff
                 
                 rotation = openglider.rs.vector.Rotation2D(-math.pi/2)
-                direction.normalized()
             
-                position += rotation.apply(direction.normalized()*0.1)
+                position += rotation.apply(direction.normalized()*0.2)
             
             all_nodes[node] = position
 

@@ -138,6 +138,8 @@ class PatternsNew:
         for sketch_name, sketch in sketches.items():
             sketch.export_a4(outdir / f"{sketch_name}.pdf")
 
+        sketches["lineplan"]._scaled_a4_layout().export_svg(str(outdir / "lineplan.svg"))
+
         self.logger.info("create spreadsheets")
         self.project.get_glider_3d().lineset.rename_lines()
         excel = get_glider_data(self.project, consumption=self.weight)
