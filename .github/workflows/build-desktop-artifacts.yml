@@ -19,8 +19,8 @@ jobs:
           - os: windows-latest
             target_name: windows-exe
             build_script: ./scripts/build_windows_exe.sh
-            artifact_name: OpenGlider-windows-exe.exe
-            artifact_path: dist/OpenGlider.exe
+            artifact_name: OpenGlider-windows-exe.zip
+            artifact_path: dist/OpenGlider-windows.zip
           - os: macos-15-intel
             target_name: macos-app-x64
             build_script: ./scripts/build_macos_app.sh
@@ -51,6 +51,12 @@ jobs:
       - name: Build desktop artifact
         shell: bash
         run: ${{ matrix.build_script }}
+
+      - name: Archive Windows application folder
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/OpenGlider -DestinationPath dist/OpenGlider-windows.zip -Force
 
       - name: Archive macOS app bundle
         if: runner.os == 'macOS'

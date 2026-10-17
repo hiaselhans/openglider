@@ -41,6 +41,7 @@ fi
     --osx-bundle-identifier org.openglider.app \
     --collect-submodules openglider \
     --collect-data openglider \
+    --collect-all odfdo \
     --collect-all debugpy \
     --collect-data qtawesome \
     --collect-data pyqtgraph \

@@ -36,14 +36,15 @@ fi
 "${PYTHON_FOR_PYINSTALLER[@]}" -m PyInstaller \
     --noconfirm \
     --clean \
-    --onefile \
+    --onedir \
     --windowed \
     --name OpenGlider \
     --collect-all openglider \
+    --collect-all odfdo \
     --collect-all debugpy \
     --collect-all qtawesome \
     --collect-all pyqtgraph \
     --hidden-import PySide6 \
     scripts/launch_gui.py
 
-echo "Windows executable created at: $ROOT_DIR/dist/OpenGlider.exe"
+echo "Windows application folder created at: $ROOT_DIR/dist/OpenGlider (run OpenGlider.exe inside)"

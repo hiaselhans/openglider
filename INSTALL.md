@@ -122,7 +122,7 @@ mypy openglider
 
 OpenGlider can be packaged as:
 
-- Windows executable (`OpenGlider.exe`)
+- Windows application folder (`OpenGlider/OpenGlider.exe`)
 - macOS application bundle (`OpenGlider.app`)
 - Linux AppImage (`OpenGlider-linux-x86_64.AppImage`)
 
@@ -138,7 +138,7 @@ Run this on a Windows machine with Python installed:
 
 Output:
 
-- `dist/OpenGlider.exe`
+- `dist/OpenGlider/OpenGlider.exe` (onedir build; distribute the whole `dist/OpenGlider` folder)
 
 ### 2. Build macOS `.app`
 
@@ -184,7 +184,7 @@ Available targets:
 
 Artifact names:
 
-- `OpenGlider-windows-exe` (`dist/OpenGlider.exe`)
+- `OpenGlider-windows-exe` (`dist/OpenGlider-windows.zip`)
 - `OpenGlider-macos-app-x64` (`dist/OpenGlider-macos-app-x64.tar.gz`)
 - `OpenGlider-macos-app-arm64` (`dist/OpenGlider-macos-app-arm64.tar.gz`)
 - `OpenGlider-linux-appimage-x64` (`dist/OpenGlider-linux-x86_64.AppImage`)
