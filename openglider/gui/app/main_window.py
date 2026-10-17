@@ -203,7 +203,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def diff(self) -> None:
         active_gliders = self.state.projects.get_active()
         if len(active_gliders) != 2:
-            raise ValueError("Need ti have two gliders selected")
+            raise ValueError("Need to have two gliders selected")
         
         g1, g2 = active_gliders
         tempdir = pathlib.Path(tempfile.gettempdir())

@@ -58,7 +58,7 @@ class ConfigTable(BaseModel):
 
         def allows_none(tp: type) -> bool:
             type_origin = typing.get_origin(tp)
-            if type_origin is typing.Union:
+            if type_origin is typing.Union or type_origin is types.UnionType:
                 return any(type_arg is types.NoneType for type_arg in typing.get_args(tp))
             return False
 
@@ -85,7 +85,7 @@ class ConfigTable(BaseModel):
             if type_origin == dict:
                 return typing.get_args(tp)
 
-            if type_origin is typing.Union:
+            if type_origin is typing.Union or type_origin is types.UnionType:
                 type_args = typing.get_args(tp)
                 if len(type_args) == 2 and types.NoneType in type_args:
                     return is_dict_type(type_args[0] if type_args[1] is types.NoneType else type_args[1])
