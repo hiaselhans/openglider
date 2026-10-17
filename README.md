@@ -11,18 +11,38 @@ This is the AIRG version of OpenGlider.
 
 ## Try It
 
+### Prebuilt versions (easiest)
 
-Clone the git-repo first:
+Compiled desktop builds (Windows, macOS, Linux) are available at
+[hiaselhans.github.io/openglider](https://hiaselhans.github.io/openglider/).
+No compiler or Python setup is required.
+
+### Developer install (from source)
+
+OpenGlider contains native extensions (Rust and C++), so building from source needs:
+
+- Python >= 3.11
+- [Rust toolchain](https://rustup.rs/) (`rustc` + `cargo`, edition 2021)
+- A C++17 compiler:
+  - Linux: `gcc`/`g++` (e.g. `sudo apt install build-essential`)
+  - macOS: Xcode command line tools (`xcode-select --install`)
+  - Windows: Visual Studio Build Tools ("Desktop development with C++")
+- [uv](https://docs.astral.sh/uv/) (recommended)
+
+Clone the git-repo and install in editable mode with `uv`:
 ```bash
 git clone https://github.com/airgproducts/openglider
-```
-
-### Install with pip
-
-```bash
 cd openglider
-pip install -e .
+
+uv venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+uv pip install -e ".[gui]"
 ```
+
+The `gui` extra installs the Qt/VTK based desktop GUI (started with the `openglider` command).
+For a headless/library-only install use `uv pip install -e .`.
+
+See [INSTALL.md](./INSTALL.md) for details.
 
 
 ## Documentation

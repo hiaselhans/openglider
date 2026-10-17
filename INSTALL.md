@@ -1,18 +1,37 @@
 Installation
 ============
 
+## Prebuilt versions
 
-To Install the python package, first you have to clone the repository:
+If you only want to use OpenGlider, download a compiled version for your platform from
+[hiaselhans.github.io/openglider](https://hiaselhans.github.io/openglider/).
+No compiler is needed.
+
+## Building from source (developer install)
+
+OpenGlider includes native extensions, so a source install needs compilers.
+Using `uv` is the recommended way.
+
+### Requirements
+
+| Requirement | Used for | Notes |
+|---|---|---|
+| Python >= 3.11 | runtime | `uv` can provision it (`uv python install 3.12`) |
+| Rust toolchain (`rustc`, `cargo`) | `openglider.rs` (PyO3) | install via [rustup](https://rustup.rs/) |
+| C++17 compiler | `openglider.xfoil` (pybind11) | see below |
+| `uv` | environment + install | recommended |
+| Internet access (first build) | fetches the `fmt` headers and Cargo crates | |
+
+C++ compiler per platform:
+
+- Linux: `gcc`/`g++` or `clang` (`sudo apt install build-essential`)
+- macOS: Xcode command line tools (`xcode-select --install`)
+- Windows: Visual Studio Build Tools with the "Desktop development with C++" workload
+
+Clone the repository:
   ```
-  git clone https://github.com/hiaselhans/OpenGlider.git
-  ```
-Then it must be linked into python-packages Folder:
-  ```
-  python setup.py develop
-  ```
-Alternatively do a static install
-  ```
-  python2 setup.py install
+  git clone https://github.com/airgproducts/openglider.git
+  cd openglider
   ```
 
 ## Development
@@ -43,11 +62,20 @@ source .venv/bin/activate  # Linux/macOS
 
 ### 3. Install
 
-Install in development mode:
+Install in development mode with the GUI (builds the Rust and C++ extensions and generates stubs):
+
+```bash
+uv pip install -e ".[gui]"
+```
+
+The `gui` extra adds the Qt/VTK dependencies (PySide6, pyqtgraph, vtk, ...) and enables the `openglider` command.
+For a headless/library-only install, omit the extra:
 
 ```bash
 uv pip install -e .
 ```
+
+Use `uv pip` rather than plain `pip` for the editable install.
 
 ## PyO3 Stub Generation
 
@@ -68,7 +96,7 @@ This project uses PyO3's `experimental-inspect` feature to automatically generat
 To build the extension and generate stubs in editable mode:
 
 ```bash
-pip install -e .
+uv pip install -e .
 ```
 
 This will:
@@ -103,8 +131,8 @@ mypy openglider
 - Run the stub generation script manually: `python scripts/generate_pyi_stubs.py`
 
 #### Import errors
-- Rebuild the extension: `pip install -e . --force-reinstall --no-cache-dir`
-- Check that all dependencies are installed: `pip install setuptools-rust pyo3`
+- Rebuild the extension: `uv pip install -e . --reinstall --no-cache`
+- Check that `cargo --version` and a C++ compiler (`g++ --version` / `clang++ --version` / MSVC) are available
 
 #### Type checking issues
 - Ensure `py.typed` marker exists in `openglider/py.typed`
