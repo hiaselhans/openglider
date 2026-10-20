@@ -1,3 +1,4 @@
+use nalgebra::{Vector2, Vector3};
 use pyo3::exceptions::{PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyList};
@@ -67,6 +68,14 @@ impl Vector2D {
 
     pub fn to_3d(self) -> Vector3D {
         Vector3D { x: self.x, y: self.y, z: 0.0 }
+    }
+
+    pub(crate) fn to_nalgebra(self) -> Vector2<f64> {
+        Vector2::new(self.x, self.y)
+    }
+
+    pub(crate) fn from_nalgebra(v: Vector2<f64>) -> Self {
+        Self { x: v.x, y: v.y }
     }
 }
 
@@ -251,6 +260,12 @@ impl Vector2D {
     fn angle(&self) -> f64 {
         self.y.atan2(self.x)
     }
+
+    pub fn rotate(&self, angle: f64) -> Self {
+
+    let (sin, cos) = angle.sin_cos();
+    Vector2D::from_xy(cos * self.x - sin * self.y, sin * self.x + cos * self.y)
+    }
 }
 
 #[pyclass(from_py_object)]
@@ -275,6 +290,14 @@ impl Vector3D {
 
     pub fn from_xyz(x: f64, y: f64, z: f64) -> Self {
         Self { x, y, z }
+    }
+
+    pub(crate) fn to_nalgebra(self) -> Vector3<f64> {
+        Vector3::new(self.x, self.y, self.z)
+    }
+
+    pub(crate) fn from_nalgebra(v: Vector3<f64>) -> Self {
+        Self { x: v.x, y: v.y, z: v.z }
     }
 }
 

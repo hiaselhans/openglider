@@ -43,6 +43,8 @@ mod rs {
     #[pymodule_export]
     use crate::cell::flatten_midribs;
     #[pymodule_export]
+    use crate::cell::flatten_strip;
+    #[pymodule_export]
     use crate::drawing::drawing_mod as drawing;
     #[pymodule_export]
     use crate::mesh::find_duplicates;
