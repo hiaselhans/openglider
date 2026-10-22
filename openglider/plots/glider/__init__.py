@@ -34,7 +34,7 @@ class PlotMaker:
     ribs: list[drawing.Part]
     dribs: PlotPartDict
     straps: collections.OrderedDict[Cell, tuple[list[drawing.Part], list[drawing.Part]]]
-    rigidfoils: list[drawing.Part]
+    cell_rigidfoils: list[drawing.Layout]
     miniribs: PlotPartDict
     seam_allowance: Length
 
@@ -52,7 +52,7 @@ class PlotMaker:
 
         self.dribs = collections.OrderedDict()
         self.straps = collections.OrderedDict()
-        self.rigidfoils = []
+        self.cell_rigidfoils = []
         self.miniribs = collections.OrderedDict()
         self.extra_parts: list[drawing.Part] = []
         self._cellplotmakers: dict[Cell, DefaultCellPlotMaker] = dict()
@@ -442,7 +442,7 @@ class PlotMaker:
             else:
                 rib_plot = self.RibPlot(rib, self.config)
 
-            rib_plot.flatten(self.glider_3d)
+            rib_drawing = rib_plot.flatten(self.glider_3d)
 
             for hole in rib.holes:
                 self.extra_parts += hole.get_parts(rib)
@@ -457,8 +457,8 @@ class PlotMaker:
             weight += rib_weight
 
             if rotate:
-                rib_plot.plotpart = rib_plot.plotpart.rotate(-90, radians=False, center=None)
-            self.ribs.append(rib_plot.plotpart)
+                rib_drawing = rib_drawing.rotate(-90, radians=False, center=None)
+            self.ribs.append(rib_drawing)
         
         self.weight["ribs"] = weight
 
@@ -500,16 +500,16 @@ class PlotMaker:
         return self.straps
 
     def get_rigidfoils(self) -> tuple[list[drawing.Part], list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]]]:
-        self.rigidfoils.clear()
+        self.cell_rigidfoils.clear()
         extra_marks: list[dict[Panel, list[openglider.rs.vector.PolyLine2D]]] = []
 
         for cell in self.glider_3d.cells:
             logger.info(f"plotting rigidfoils for cell: {cell.name}")
             rigidfoils, _extra_marks = self._get_cellplotmaker(cell).get_rigidfoils()
-            self.rigidfoils += rigidfoils
+            self.cell_rigidfoils += rigidfoils
             extra_marks.append(_extra_marks)
         
-        return self.rigidfoils, extra_marks
+        return self.cell_rigidfoils, extra_marks
     
     def get_miniribs(self) -> PlotPartDict:
         self.miniribs.clear()
@@ -551,7 +551,7 @@ class PlotMaker:
             for c in list(self.straps.values())[::-1]
         ], distance=self.config.patterns_align_dist_x)
         straps = straps_upper.append_left(straps_lower, distance=self.config.patterns_align_dist_x)
-        rigidfoils = drawing.Layout.stack_row([drawing.Layout([part]) for part in self.rigidfoils], self.config.patterns_align_dist_x)
+        rigidfoils = drawing.Layout.stack_row([drawing.Layout([part]) for part in self.cell_rigidfoils], self.config.patterns_align_dist_x)
         miniribs = stack_grid(self.miniribs)
         panels_bbox = panels_main.bbox()
         panels_x_bounds = None if panels_bbox is None else (panels_bbox[0], panels_bbox[1])

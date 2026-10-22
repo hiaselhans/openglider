@@ -26,6 +26,12 @@ def initialize_part_layer_strokes(part: drawing.Part) -> drawing.Part:
             layer.style.stroke = stroke
     return part
 
+def initialize_layout_layer_strokes() -> drawing.Layout:
+    layout = drawing.Layout()
+    for layer_name, stroke in DEFAULT_LAYER_STROKES.items():
+        with layout.layer(layer_name) as layer:
+            layer.style.stroke = stroke
+    return layout
 
 def _stroke_is_unset(stroke: str | None) -> bool:
     if stroke is None:

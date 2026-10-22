@@ -1,13 +1,10 @@
-use dxf::entities::{Entity, EntityType, LwPolyline as DxfLwPolylineEntity, ModelPoint as DxfPointEntity, Text as DxfTextEntity};
-use dxf::enums::{AcadVersion, HorizontalTextJustification, VerticalTextJustification};
-use dxf::tables::Layer as DxfLayer;
-use dxf::Color;
-use dxf::{Drawing as DxfDrawing, LwPolylineVertex, Point, Vector};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
+
+mod dxf;
 
 use svg::node::element::{Circle, Group, Polyline, Text as SvgText};
 use svg::Document;
@@ -99,10 +96,6 @@ fn merge_bbox(current: &mut Option<(f64, f64, f64, f64)>, other: Option<(f64, f6
     }
 }
 
-fn vector2d_to_point(point: Vector2D) -> Point {
-    Point::new(point.x, point.y, 0.0)
-}
-
 fn svg_points(points: &[Vector2D]) -> String {
     points
         .iter()
@@ -130,17 +123,6 @@ fn svg_text_anchor(align: f64) -> &'static str {
     }
 }
 
-fn dxf_horizontal_justification(align: f64) -> HorizontalTextJustification {
-    let align = normalize_text_align(align);
-    if align >= 0.33 {
-        HorizontalTextJustification::Right
-    } else if align <= -0.33 {
-        HorizontalTextJustification::Left
-    } else {
-        HorizontalTextJustification::Center
-    }
-}
-
 fn text_anchor_name(align: f64, valign: f64) -> String {
     let horizontal = if align >= 0.33 {
         "right"
@@ -160,17 +142,7 @@ fn text_anchor_name(align: f64, valign: f64) -> String {
     horizontal.to_string()
 }
 
-fn dxf_vertical_justification(valign: f64) -> VerticalTextJustification {
-    if valign >= 0.75 {
-        VerticalTextJustification::Top
-    } else if valign <= 0.25 {
-        VerticalTextJustification::Bottom
-    } else {
-        VerticalTextJustification::Middle
-    }
-}
-
-fn dxf_text_anchor(text: &Text) -> Point {
+fn dxf_text_anchor(text: &Text) -> Vector2D {
     let direction = text.direction();
     let normal = text.normal();
     let text_width = text.font_size() * text.text.chars().count() as f64;
@@ -187,7 +159,7 @@ fn dxf_text_anchor(text: &Text) -> Point {
         translate_point(base, scale_point(direction, horizontal_offset)),
         scale_point(normal, vertical_offset),
     );
-    vector2d_to_point(anchor)
+    anchor
 }
 
 fn parse_hex_rgb(value: &str) -> Option<(u8, u8, u8)> {
@@ -271,108 +243,6 @@ fn stroke_width_to_lineweight(stroke_width: f64) -> i16 {
     let width = if stroke_width.is_finite() { stroke_width } else { 0.25 };
     let raw = (width * 100.0).round() as i16;
     raw.clamp(0, 211)
-}
-
-fn dxf_truecolor(stroke: &Option<String>) -> i32 {
-    if let Some((r, g, b)) = stroke_to_rgb(stroke) {
-        ((r as i32) << 16) | ((g as i32) << 8) | (b as i32)
-    } else {
-        0
-    }
-}
-
-fn polyline_to_lwpolyline(line: &PolyLine2D) -> Option<DxfLwPolylineEntity> {
-    if line.nodes.len() < 2 {
-        return None;
-    }
-
-    let mut polyline = DxfLwPolylineEntity::default();
-    let mut end = line.nodes.len();
-    let is_closed = line.nodes.len() > 2
-        && line.nodes.first().map(|point| point.x) == line.nodes.last().map(|point| point.x)
-        && line.nodes.first().map(|point| point.y) == line.nodes.last().map(|point| point.y);
-
-    // Closed polylines should not duplicate start/end vertices; closure is encoded via flags.
-    if is_closed {
-        end -= 1;
-        polyline.set_is_closed(true);
-    }
-
-    polyline.vertices = line.nodes[..end]
-        .iter()
-        .map(|point| LwPolylineVertex {
-            x: point.x,
-            y: point.y,
-            id: 0,
-            starting_width: 0.0,
-            ending_width: 0.0,
-            bulge: 0.0,
-        })
-        .collect();
-
-    Some(polyline)
-}
-
-fn dxf_line_entities(line: &PolyLine2D, layer_name: &str, layer_style: &LayerStyle) -> Vec<Entity> {
-    if line.nodes.is_empty() {
-        return Vec::new();
-    }
-
-    let aci = stroke_to_aci(&layer_style.stroke);
-    let lineweight = stroke_width_to_lineweight(layer_style.stroke_width);
-    let truecolor = dxf_truecolor(&layer_style.stroke);
-
-    if line.nodes.len() == 1 {
-        let mut entity = Entity::new(EntityType::ModelPoint(DxfPointEntity {
-            location: vector2d_to_point(line.nodes[0]),
-            ..DxfPointEntity::default()
-        }));
-        entity.common.layer = layer_name.to_string();
-        entity.common.color = Color::from_index(aci);
-        entity.common.lineweight_enum_value = lineweight;
-        entity.common.color_24_bit = truecolor;
-        return vec![entity];
-    }
-
-    let polyline = match polyline_to_lwpolyline(line) {
-        Some(polyline) => polyline,
-        None => return Vec::new(),
-    };
-
-    let mut entity = Entity::new(EntityType::LwPolyline(polyline));
-    entity.common.layer = layer_name.to_string();
-    entity.common.color = Color::from_index(aci);
-    entity.common.lineweight_enum_value = lineweight;
-    entity.common.color_24_bit = truecolor;
-    return vec![entity];
-}
-
-fn dxf_text_entity(text: &Text, layer_name: &str, layer_style: &LayerStyle) -> Entity {
-    let anchor = dxf_text_anchor(text);
-    let aci = stroke_to_aci(&layer_style.stroke);
-    let lineweight = stroke_width_to_lineweight(layer_style.stroke_width);
-    let truecolor = dxf_truecolor(&layer_style.stroke);
-    let mut entity = Entity::new(EntityType::Text(DxfTextEntity {
-        value: text.text.clone(),
-        location: anchor.clone(),
-        text_height: layer_style.font_size.unwrap_or_else(|| text.letter_height()),
-        rotation: (text.p2.y - text.p1.y).atan2(text.p2.x - text.p1.x).to_degrees(),
-        relative_x_scale_factor: 1.0,
-        oblique_angle: 0.0,
-        text_style_name: layer_style.font_family.clone().unwrap_or_else(|| "STANDARD".to_string()),
-        text_generation_flags: 0,
-        horizontal_text_justification: dxf_horizontal_justification(text.align),
-        second_alignment_point: anchor,
-        normal: Vector::z_axis(),
-        vertical_text_justification: dxf_vertical_justification(text.valign),
-        thickness: 0.0,
-        ..DxfTextEntity::default()
-    }));
-    entity.common.layer = layer_name.to_string();
-    entity.common.color = Color::from_index(aci);
-    entity.common.lineweight_enum_value = lineweight;
-    entity.common.color_24_bit = truecolor;
-    entity
 }
 
 #[pyclass(from_py_object)]
@@ -596,10 +466,6 @@ impl Text {
             .or(layer_style.stroke.as_deref())
             .unwrap_or("black");
         element.set("fill", fill)
-    }
-
-    fn dxf_entity(&self, layer_name: &str, layer_style: &LayerStyle) -> Entity {
-        dxf_text_entity(self, layer_name, layer_style)
     }
 
     fn transformed(&self, transform: impl Fn(Vector2D) -> Vector2D) -> Self {
@@ -1330,46 +1196,8 @@ impl Layout {
             .set("height", format!("{}px", height_px))
     }
 
-    fn dxf_drawing(&self) -> DxfDrawing {
-        let mut drawing = DxfDrawing::new();
-        // LWPOLYLINE requires R14+; keep parity with legacy exporter (AC1015/R2000).
-        drawing.header.version = AcadVersion::R2000;
-        let mut added_layers = BTreeSet::new();
-
-        for part in &self.parts {
-            for (layer_name, layer) in &part.layers {
-                if !layer.style.visible {
-                    continue;
-                }
-
-                if added_layers.insert(layer_name.clone()) {
-                    let mut dxf_layer = DxfLayer::default();
-                    dxf_layer.name = layer_name.clone();
-                    dxf_layer.color = Color::from_index(stroke_to_aci(&layer.style.stroke));
-                    dxf_layer.normalize();
-                    drawing.add_layer(dxf_layer);
-                }
-
-                for line in &layer.lines {
-                    for entity in dxf_line_entities(line, layer_name, &layer.style) {
-                        drawing.add_entity(entity);
-                    }
-                }
-
-                for text in &layer.texts {
-                    drawing.add_entity(text.dxf_entity(layer_name, &layer.style));
-                }
-            }
-        }
-
-        drawing
-    }
-
-    fn to_dxf_string(&self) -> PyResult<String> {
-        let drawing = self.dxf_drawing();
-        let mut buffer = Vec::new();
-        drawing.save(&mut buffer).map_err(|error| PyIOError::new_err(format!("failed to build dxf: {}", error)))?;
-        String::from_utf8(buffer).map_err(|error| PyIOError::new_err(format!("failed to encode dxf text: {}", error)))
+    fn to_dxf_string(&self, blocks: bool) -> PyResult<String> {
+        dxf::parts_to_dxf(&self.parts, blocks).map_err(PyIOError::new_err)
     }
 
     fn stack_input_to_layouts(py: Python<'_>, parts: Vec<Py<PyAny>>) -> PyResult<Vec<Layout>> {
@@ -1606,9 +1434,11 @@ impl Layout {
             .map_err(|error| PyIOError::new_err(format!("failed to write svg file '{}': {}", path, error)))
     }
 
-    #[pyo3(signature = (path))]
-    fn export_dxf(&self, path: String) -> PyResult<()> {
-        fs::write(&path, self.to_dxf_string()?)
+    /// Writes the layout as DXF. With `blocks` every plot part is written as a block (inserted once in
+    /// model space), otherwise all entities are written directly into model space.
+    #[pyo3(signature = (path, blocks = true))]
+    fn export_dxf(&self, path: String, blocks: bool) -> PyResult<()> {
+        fs::write(&path, self.to_dxf_string(blocks)?)
             .map_err(|error| PyIOError::new_err(format!("failed to write dxf file '{}': {}", path, error)))
     }
 

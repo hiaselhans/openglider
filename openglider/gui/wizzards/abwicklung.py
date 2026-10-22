@@ -159,9 +159,7 @@ class PlotWizzard(Wizard):
                 rib_plot = self.plotmaker.SingleSkinRibPlot(rib)
             else:
                 rib_plot = self.plotmaker.RibPlot(rib)  # type: ignore
-            rib_plot.flatten(glider_3d)
-            dwg = rib_plot.plotpart
-            layout = drawing.Layout([dwg])
+            layout = rib_plot.flatten(glider_3d)
 
         elif type_str == "Panels":
             cell = glider_3d.cells[element_index]

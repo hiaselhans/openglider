@@ -13,7 +13,7 @@ from openglider.glider.cell.diagonals import DiagonalSide
 from openglider.glider.cell.panel import PANELCUT_TYPES
 from openglider.glider.rib.rigidfoils import RigidFoilBase
 from openglider.plots.config import PatternConfig
-from openglider.plots.glider.layer_styles import add_line, add_lines, initialize_part_layer_strokes
+from openglider.plots.glider.layer_styles import add_line, add_lines, initialize_layout_layer_strokes, initialize_part_layer_strokes
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.utils.config import Config
 from openglider.vector.text import Text
@@ -52,7 +52,7 @@ class RigidFoilPlot:
     def __init__(self, rigidfoil: RigidFoilBase, ribplot: RibPlot) -> None:
         self.rigidfoil = rigidfoil
         self.ribplot = ribplot
-        self.drawing = initialize_part_layer_strokes(drawing.Part())
+        self.drawing = initialize_part_layer_strokes(drawing.Part(name=f"{ribplot.rib.name}_{rigidfoil.name}"))
 
     def add_text(self) -> None:
         (_, p1), (_, p2) = self.get_cap("back")
@@ -290,7 +290,7 @@ class RibPlot:
 
 
 
-    def flatten(self, glider: Glider, add_rigidfoils_to_plot: bool=True) -> drawing.Part:
+    def flatten(self, glider: Glider, add_rigidfoils_to_plot: bool=True) -> drawing.Layout:
         self.plotpart = initialize_part_layer_strokes(
             drawing.Part(name=self.rib.name, material_code=str(self.rib.material))
         )
@@ -335,15 +335,18 @@ class RibPlot:
 
         self.weight = MaterialUsage().consume(self.rib.material, area)
 
+        layout = drawing.Layout([self.plotpart])
+
         rigidfoils = self.draw_rigidfoils(glider)
         if add_rigidfoils_to_plot and rigidfoils:
             diff = max([_part_bbox(r)[1] for r in rigidfoils])
             min_x = _part_bbox(self.plotpart)[0]
             for rigidfoil in rigidfoils:
+                print("diff:", diff, "min_x:", min_x)
                 moved = rigidfoil.move(openglider.rs.vector.Vector2D([-(diff-min_x+0.2), 0]))
-                _merge_parts(self.plotpart, moved)
+                layout.add_part(moved)
 
-        return self.plotpart
+        return layout
 
     def _get_inner_outer(self, x_value: Percentage | float) -> tuple[openglider.rs.vector.Vector2D, openglider.rs.vector.Vector2D]:
         ik = get_x_value(self.x_values, x_value)
@@ -633,7 +636,7 @@ class SingleSkinRibPlot(RibPlot):
 
         return self.skin_cut
 
-    def flatten(self, glider: Glider, add_rigidfoils_to_plot: bool=True) -> drawing.Part:
+    def flatten(self, glider: Glider, add_rigidfoils_to_plot: bool=True) -> drawing.Layout:
         self._get_singleskin_cut(glider)
         return super().flatten(glider, add_rigidfoils_to_plot=add_rigidfoils_to_plot)
 

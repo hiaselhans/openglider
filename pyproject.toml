@@ -29,7 +29,6 @@ dependencies = [
     "svgwrite",
     "numpy",
     "scipy",
-    "ezdxf",
     "odfdo",
     "lxml",
     "packaging",
