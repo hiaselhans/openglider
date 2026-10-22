@@ -53,6 +53,7 @@ class Cell(BaseModel):
     attachment_points: list[CellAttachmentPoint] = Field(default_factory=lambda: [])
     miniribs: list[MiniRib] = Field(default_factory=lambda: [])
 
+    flatten_from_midribs: bool = True
     name: str = "unnamed"
 
     def __json__(self) -> dict[str, object]:
@@ -497,11 +498,37 @@ class Cell(BaseModel):
 
     @cached_function("self")
     def get_flattened_cell(self, numribs: int=50, num_inner: int | None=None) -> FlattenedCell:
-        midribs = self.get_midribs(numribs)
-        inner, ballooned = openglider.rs.flatten_midribs(
-            [rib.curve for rib in midribs],
-            num_inner=num_inner,
-        )
+        if self.flatten_from_midribs:
+            midribs = self.get_midribs(numribs)
+            inner, ballooned = openglider.rs.flatten_midribs(
+                [rib.curve for rib in midribs],
+                num_inner=num_inner,
+            )
+        else:
+            ballooning_modified = self.ballooning_modified
+            x_values = self.rib1.profile_2d.x_values
+            correction = []
+
+            for x in x_values:
+                x_normalized = max(0.0, ballooning_modified[max(-1.0, min(1.0, x))])
+                correction.append(x_normalized)
+
+            ballooned = openglider.rs.flatten_strip(
+                left=self.rib1.get_profile_3d().curve,
+                right=self.rib2.get_profile_3d().curve,
+                correction=correction
+            )
+
+            y_values = linspace(0, 1, numribs)
+            inner: list[openglider.rs.vector.PolyLine2D] = []
+
+            # insert mid-points
+            diff = ballooned[1].sub(ballooned[0])
+            for y in y_values:
+                inner.append(
+                    ballooned[0].add(diff.scale(y))
+                )
+
         return FlattenedCell(
             inner=inner,
             ballooned=ballooned

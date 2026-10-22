@@ -55,6 +55,8 @@ class ParametricGliderConfig(ConfigTable):
 
     color_groups: dict[str, str] | None = None
 
+    flatten_from_midribs: bool = True
+
     version: VersionType = Version(__version__)
 
     @classmethod

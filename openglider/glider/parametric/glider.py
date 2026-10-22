@@ -526,7 +526,8 @@ class ParametricGlider:
                 ballooning_reference=ballooning_factor.ballooning_reference,
                 name=f"c{cell_no+1}",
                 attachment_points=[],
-                ballooning_modifiers=self.tables.ballooning_modifiers.get_modifiers(cell_no, resolvers=resolvers)
+                ballooning_modifiers=self.tables.ballooning_modifiers.get_modifiers(cell_no, resolvers=resolvers),
+                flatten_from_midribs=self.config.flatten_from_midribs
                 )
 
             attachment_points = self.tables.attachment_points_cell.get(cell_no, resolvers=resolvers, cell=cell)
