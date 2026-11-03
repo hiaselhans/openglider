@@ -5,6 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Any, ClassVar
 from openglider.gui.app.files import OpengliderDir
 
+from openglider.airfoil.profile_2d import Profile2D
 from openglider.gui.state.glider_list import GliderList
 import openglider.jsonify
 from openglider.glider.project import GliderProject
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 
 class ApplicationState(BaseModel):
     projects: GliderList = Field(default_factory=lambda: GliderList())
+    airfoils: dict[str, Profile2D] = Field(default_factory=lambda: {})
     opened_tabs: dict[str, Any] = Field(default_factory=lambda: {})
 
     current_tab: str = ""
@@ -25,6 +27,7 @@ class ApplicationState(BaseModel):
     def __json__(self) -> dict[str, Any]:
         return {
             "projects": self.projects,
+            "airfoils": self.airfoils,
             "opened_tabs": {tab.name: tab.__class__.__name__ for tab in self.opened_tabs.values()},
             
             "current_tab": self.current_tab,

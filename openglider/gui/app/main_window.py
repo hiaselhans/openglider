@@ -14,6 +14,7 @@ from openglider.gui.app.app import get_window_icon
 from openglider.gui.qt import QtCore, QtWidgets, QtGui, QAction
 from openglider.version import __version__
 from openglider.gui.icons import icon
+from openglider.gui.views.airfoils import AirfoilView
 from openglider.gui.views.compare import GliderPreview
 from openglider.gui.views.console import ConsoleHandler, ConsoleWidget, LogFilterPanel
 from openglider.gui.views.glider_list import GliderListWidget
@@ -65,6 +66,7 @@ class MainWindow(QtWidgets.QMainWindow):
     task_queue: QTaskQueue
     overview: QtWidgets.QSplitter
     glider_list: GliderListWidget
+    airfoil_view: AirfoilView
     console: ConsoleWidget
     log_filter_panel: LogFilterPanel
 
@@ -128,6 +130,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.help = HelpView()
         self.top_panel.addTab(self.help, "Help")
 
+        self.airfoil_view = AirfoilView(self)
+        self.top_panel.addTab(self.airfoil_view, "Airfoils")
+        self.top_panel.currentChanged.connect(self._tab_changed)
+
         self.log_filter_panel = LogFilterPanel(self.bottom_panel)
         bottom_panel_layout.addWidget(self.log_filter_panel, 0)
 
@@ -161,6 +167,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         for menu_name in self.menu_actions:
             self.menus[menu_name] = menubar.addMenu(f"&{menu_name}")
+
+        # not part of self.menus: should stay enabled without gliders
+        self.airfoil_menu = menubar.addMenu("&Airfoils")
+        load_airfoil = QAction(icon("fa.folder"), "Load airfoil", self)
+        load_airfoil.triggered.connect(lambda: self.airfoil_view.load_dialog())
+        self.airfoil_menu.addAction(load_airfoil)
+        fit_parsec = QAction(icon("fa.minus"), "Fit PARSEC", self)
+        fit_parsec.triggered.connect(self.open_parsec_wizard)
+        self.airfoil_menu.addAction(fit_parsec)
 
         self.menus["debug"] = menubar.addMenu("&Debug")
         reload_action = QAction(icon("fa.minus"), "Reload", self)
@@ -199,6 +214,24 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.action_store[name] = action
 
         self.menus["view"].addAction(diff_gliders)
+
+    def _tab_changed(self, index: int) -> None:
+        if self.top_panel.widget(index) is self.airfoil_view:
+            self.airfoil_view.refresh()
+
+    def open_parsec_wizard(self) -> None:
+        from openglider.gui.wizzards.parsec import fit_parsec_popup
+
+        entry = self.airfoil_view.get_current()
+        if entry is None:
+            entries = self.airfoil_view.get_entries()
+            entry = entries[0] if entries else None
+
+        if entry is None:
+            fit_parsec_popup(self)
+            return
+
+        fit_parsec_popup(self, entry.airfoil, entry.name)
 
     def diff(self) -> None:
         active_gliders = self.state.projects.get_active()
@@ -304,6 +337,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     preview.import_obj(fname)
                     self.top_panel.setCurrentIndex(0)
                     self.glider_preview.tabs_widget.setCurrentIndex(self.glider_preview.tab_names.index("3D"))
+                elif suffix == ".dat":
+                    self.airfoil_view.load_files([fname])
+                    self.top_panel.setCurrentWidget(self.airfoil_view)
                 else:
                     asyncio.ensure_future(self.load_glider(fname))
             #self.load_image()
@@ -349,6 +385,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.console.push_local_ns("wings", list(self.glider_projects))
         self.current_glider_changed()
         self.update_menu()
+        self.airfoil_view.refresh()
         self.top_panel.setCurrentIndex(0)
 
     def load_demowing(self) -> None:
