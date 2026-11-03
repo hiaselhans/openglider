@@ -1,7 +1,10 @@
 import random
 import unittest
+from types import SimpleNamespace
 
 from openglider.glider.glider import Glider
+from openglider.gui.qt import QtWidgets
+from openglider.gui.views.airfoils import AirfoilEntry, ApplyAirfoilsDialog, _KEY_ROLE
 from tests.helpers import GliderTestCase
 
 
@@ -56,6 +59,40 @@ class TestGlider(GliderTestCase):
     def test_mean_rib(self) -> None:
         for cell in self.glider.cells:
             cell.mean_airfoil(10)
+
+    def test_apply_airfoils_creates_new_revision_entry(self) -> None:
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        app_obj = SimpleNamespace()
+        app_obj.glider_projects = [self.project]
+        app_obj.state = SimpleNamespace(projects=SimpleNamespace(selected_element=self.project.name))
+        app_obj.glider_list = SimpleNamespace(render=lambda: None)
+        app_obj.current_glider_changed = lambda: None
+        app_obj.update_menu = lambda: None
+        app_obj.airfoil_view = SimpleNamespace(refresh=lambda: None)
+        app_obj.add_glider_calls = []
+
+        def add_glider(glider, focus=True, increase_revision=False):
+            app_obj.add_glider_calls.append((glider, focus, increase_revision))
+
+        app_obj.add_glider = add_glider
+
+        entry = AirfoilEntry(
+            key="demo-airfoil",
+            source="test",
+            name="demo-airfoil",
+            airfoil=self.project.glider.profiles[0].copy(),
+        )
+
+        dialog = ApplyAirfoilsDialog(app_obj, [entry])
+        item = QtWidgets.QListWidgetItem()
+        item.setData(_KEY_ROLE, entry.key)
+        dialog.selected_list.addItem(item)
+
+        dialog._apply()
+
+        self.assertEqual(len(app_obj.add_glider_calls), 1)
+        self.assertTrue(app_obj.add_glider_calls[0][2])
+        self.assertEqual(dialog.result(), QtWidgets.QDialog.DialogCode.Accepted)
 
 
 if __name__ == '__main__':

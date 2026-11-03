@@ -1,4 +1,6 @@
-from typing import Any, Callable, Iterable, List, Self, Sequence
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Callable, Iterable, List, Self, Sequence
 import os
 import re
 import math
@@ -7,6 +9,9 @@ import logging
 import openglider.rs
 from openglider.utils.cache import cached_property
 import openglider.xfoil as xfoil
+
+if TYPE_CHECKING:
+    from openglider.airfoil.generators.parsec import ParsecAirfoil
 import pandas
 
 from openglider.airfoil.generators import JoukowskyAirfoil, VanDeVoorenAirfoil, TrefftzKuttaAirfoil, compute_naca
@@ -25,6 +30,10 @@ class Profile2D:
     ncrit = 4
     xtr_top = 0.5
     xtr_bottom = 0.5
+    reynolds: float | None = None
+    mach: float = 0.
+
+    parsec_data: ParsecAirfoil | None = None
 
     def __init__(self, data: Sequence[openglider.rs.vector.Vector2D | tuple[float, float]] | openglider.rs.vector.PolyLine2D, name: str="unnamed") -> None:
         self.name = name
@@ -66,6 +75,10 @@ class Profile2D:
         solver.ncrit = self.ncrit
         solver.xtr_top = self.xtr_top
         solver.xtr_bottom = self.xtr_bottom
+        if self.reynolds is not None and hasattr(solver, "reynolds"):
+            solver.reynolds = self.reynolds
+        if hasattr(solver, "mach"):
+            solver.mach = self.mach
 
         if len(self.curve) > 300:
             raise Exception(f"too many numpoints for profile {self.name}: {len(self.curve)}")

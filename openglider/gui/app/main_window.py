@@ -119,8 +119,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.overview.setSizes([200, 800])
         self.top_panel.addTab(self.overview, "Main")
 
-        #self.diff_view = DiffView(self, self.state)
-        #self.top_panel.addTab(self.diff_view, "Diff")
+        self.airfoil_view = AirfoilView(self)
+        self.top_panel.addTab(self.airfoil_view, "Airfoils")
+        self.top_panel.currentChanged.connect(self._tab_changed)
 
         if self.app.task_queue is None:
             raise RuntimeError("application task queue is not initialized")
@@ -130,9 +131,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.help = HelpView()
         self.top_panel.addTab(self.help, "Help")
 
-        self.airfoil_view = AirfoilView(self)
-        self.top_panel.addTab(self.airfoil_view, "Airfoils")
-        self.top_panel.currentChanged.connect(self._tab_changed)
 
         self.log_filter_panel = LogFilterPanel(self.bottom_panel)
         bottom_panel_layout.addWidget(self.log_filter_panel, 0)
@@ -167,15 +165,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         for menu_name in self.menu_actions:
             self.menus[menu_name] = menubar.addMenu(f"&{menu_name}")
-
-        # not part of self.menus: should stay enabled without gliders
-        self.airfoil_menu = menubar.addMenu("&Airfoils")
-        load_airfoil = QAction(icon("fa.folder"), "Load airfoil", self)
-        load_airfoil.triggered.connect(lambda: self.airfoil_view.load_dialog())
-        self.airfoil_menu.addAction(load_airfoil)
-        fit_parsec = QAction(icon("fa.minus"), "Fit PARSEC", self)
-        fit_parsec.triggered.connect(self.open_parsec_wizard)
-        self.airfoil_menu.addAction(fit_parsec)
 
         self.menus["debug"] = menubar.addMenu("&Debug")
         reload_action = QAction(icon("fa.minus"), "Reload", self)
@@ -218,20 +207,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _tab_changed(self, index: int) -> None:
         if self.top_panel.widget(index) is self.airfoil_view:
             self.airfoil_view.refresh()
-
-    def open_parsec_wizard(self) -> None:
-        from openglider.gui.wizzards.parsec import fit_parsec_popup
-
-        entry = self.airfoil_view.get_current()
-        if entry is None:
-            entries = self.airfoil_view.get_entries()
-            entry = entries[0] if entries else None
-
-        if entry is None:
-            fit_parsec_popup(self)
-            return
-
-        fit_parsec_popup(self, entry.airfoil, entry.name)
 
     def diff(self) -> None:
         active_gliders = self.state.projects.get_active()

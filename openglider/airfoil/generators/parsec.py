@@ -36,6 +36,7 @@ import functools
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, fields
+from enum import Enum
 
 import numpy as np
 import numpy.typing as npt
@@ -47,6 +48,7 @@ from openglider.airfoil.profile_2d import Profile2D as Airfoil
 FloatArray = npt.NDArray[np.float64]
 
 _EPS = 1e-9
+_REAR2_X = 0.8
 _DEGREE = 3
 _NUM_CONTROLPOINTS = 5
 _NUM_SAMPLES = 500
@@ -106,10 +108,6 @@ class SurfaceParameters:
     "distance of the control points next to the maximum"
     rear_factor: float = 0.
     "offset of rear1 as percentage of |y_max|"
-    trailing_edge_angle: float = 0.2
-    "angle between the surface and the chord at the trailing edge"
-    trailing_edge_factor: float = 0.
-    "perpendicular offset of rear2 as percentage of |y_max| (0: no additional offset)"
 
     @classmethod
     def parameter_names(cls) -> list[str]:
@@ -122,7 +120,7 @@ class SurfaceParameters:
     def from_list(cls, values: Sequence[float]) -> SurfaceParameters:
         return cls(**{name: float(value) for name, value in zip(cls.parameter_names(), values)})
 
-    def control_points(self) -> tuple[FloatArray, FloatArray]:
+    def control_points(self, trailing_edge_angle: float=0., trailing_edge_factor: float=0.) -> tuple[FloatArray, FloatArray]:
         """control points of the front and the rear curve (y positive)"""
         x_max = self.x_max
         y_max = self.y_max
@@ -153,35 +151,34 @@ class SurfaceParameters:
             [x_max, y_max]
         ], dtype=float)
 
-        # rear: interpolated between the point behind the maximum and the trailing edge
+        # rear: construct rear2 first, then rear1 between back and rear2
         rear_radius = min(self.top_radius, 1 - x_max)
         x_start = x_max + rear_radius
-        length = 1 - x_start
-        x1 = x_start + length / 3
-        y1 = y_max * 2 / 3 + self.rear_factor * profile_height
+        rear_back = np.array([x_start, y_max])
 
-        rear1 = np.array([x1, y1])
-        trailing_edge = np.array([1., 0.])
-        rear_segment = trailing_edge - rear1
-        rear2 = rear1 + rotate(rear_segment * 0.5, self.trailing_edge_angle)
+        rear2_x = min(max(_REAR2_X, x_start + _EPS), 1. - _EPS)
+        rear2_y = math.tan(trailing_edge_angle) * (1. - rear2_x)
+        rear2 = np.array([rear2_x, rear2_y + trailing_edge_factor * profile_height])
+
+        rear_segment = rear2 - rear_back
         rear_segment_length = max(np.linalg.norm(rear_segment), _EPS)
         rear_normal = rotate(rear_segment / rear_segment_length, math.pi / 2)
-        rear2 = rear2 + rear_normal * self.trailing_edge_factor * profile_height
+        rear1 = rear_back + 0.5 * rear_segment + rear_normal * self.rear_factor * profile_height
 
         rear = np.array([
             [x_max, y_max],
             [x_start, y_max],
-            [x1, y1],
+            rear1,
             rear2,
             [1, 0]
         ], dtype=float)
 
         return front, rear
 
-    def polyline(self, num: int=_NUM_SAMPLES) -> FloatArray:
+    def polyline(self, num: int=_NUM_SAMPLES, trailing_edge_angle: float=0., trailing_edge_factor: float=0.) -> FloatArray:
         """densely sampled surface from the nose to the trailing edge (y positive)"""
         basis = _sample_basis(num)
-        front, rear = self.control_points()
+        front, rear = self.control_points(trailing_edge_angle, trailing_edge_factor)
 
         return np.vstack([basis @ front, (basis @ rear)[1:]])  # type: ignore[no-any-return]
 
@@ -222,47 +219,77 @@ class ParsecFit:
     max_error: float
 
 
+class SurfaceSide(Enum):
+    UPPER = "upper"
+    LOWER = "lower"
+
+
 @dataclass
 class ParsecAirfoil:
     upper: SurfaceParameters = field(default_factory=lambda: SurfaceParameters())
     lower: SurfaceParameters = field(default_factory=lambda: SurfaceParameters(
-        x_max=0.35, y_max=0.03, nose_radius=0.02, top_radius=0.12, trailing_edge_angle=0.1
+        x_max=0.35, y_max=0.03, nose_radius=0.02, top_radius=0.12
     ))
+    trailing_edge_angle: float = 0.2
+    trailing_edge_factor: float = 0.
+    numpoints: int = 180
 
     def get_parameters(self) -> dict[str, float]:
         """flat parameter dict (upper_x_max, ...)"""
-        return {
+        values = {
             f"{side}_{name}": value
-            for side, params in (("upper", self.upper), ("lower", self.lower))
+            for side, params in ((SurfaceSide.UPPER.value, self.upper), (SurfaceSide.LOWER.value, self.lower))
             for name, value in zip(SurfaceParameters.parameter_names(), params.to_list())
         }
+        values["trailing_edge_angle"] = self.trailing_edge_angle
+        values["trailing_edge_factor"] = self.trailing_edge_factor
+
+        return values
+
+    def _surface_parameters(self, side: SurfaceSide) -> SurfaceParameters:
+        return self.upper if side is SurfaceSide.UPPER else self.lower
+
+    def _surface_trailing_angle(self, side: SurfaceSide) -> float:
+        return self.trailing_edge_angle if side is SurfaceSide.UPPER else -self.trailing_edge_angle
+
+    def _surface_control_points(self, side: SurfaceSide) -> tuple[FloatArray, FloatArray]:
+        params = self._surface_parameters(side)
+        angle = self._surface_trailing_angle(side)
+        return params.control_points(angle, self.trailing_edge_factor)
+
+    def _surface_polyline(self, side: SurfaceSide, num: int=_NUM_SAMPLES) -> FloatArray:
+        params = self._surface_parameters(side)
+        angle = self._surface_trailing_angle(side)
+        return params.polyline(num, angle, self.trailing_edge_factor)
 
     def get_curves(self) -> dict[str, openglider.rs.spline.CubicBSplineCurve]:
         """the four b-spline curves (the lower ones are mirrored)"""
         result = {}
-        for side, params, sign in (("upper", self.upper, 1), ("lower", self.lower, -1)):
-            front, rear = params.control_points()
-            result[f"{side}_front"] = openglider.rs.spline.CubicBSplineCurve(
+        for side, sign in ((SurfaceSide.UPPER, 1), (SurfaceSide.LOWER, -1)):
+            front, rear = self._surface_control_points(side)
+            result[f"{side.value}_front"] = openglider.rs.spline.CubicBSplineCurve(
                 [[x, sign * y] for x, y in front]
             )
-            result[f"{side}_rear"] = openglider.rs.spline.CubicBSplineCurve(
+            result[f"{side.value}_rear"] = openglider.rs.spline.CubicBSplineCurve(
                 [[x, sign * y] for x, y in rear]
             )
 
         return result
 
     def upper_at(self, x: Sequence[float] | FloatArray) -> FloatArray:
-        return _y_at(self.upper.polyline(), np.abs(np.asarray(x, dtype=float)))
+        return _y_at(self._surface_polyline(SurfaceSide.UPPER), np.abs(np.asarray(x, dtype=float)))
 
     def lower_at(self, x: Sequence[float] | FloatArray) -> FloatArray:
-        return -_y_at(self.lower.polyline(), np.abs(np.asarray(x, dtype=float)))
+        return -_y_at(self._surface_polyline(SurfaceSide.LOWER), np.abs(np.asarray(x, dtype=float)))
 
-    def get_airfoil(self, numpoints: int=100, name: str="parsec") -> Airfoil:
+    def get_airfoil(self, numpoints: int=None, name: str="parsec") -> Airfoil:
         """airfoil from the trailing edge via the upper surface and the nose to the trailing edge"""
+        if numpoints is None:
+            numpoints = self.numpoints
         num = max(2, numpoints // 2)
 
-        upper = _resample(self.upper.polyline(), num)
-        lower = _resample(self.lower.polyline(), num) * np.array([1, -1])
+        upper = _resample(self._surface_polyline(SurfaceSide.UPPER), num)
+        lower = _resample(self._surface_polyline(SurfaceSide.LOWER), num) * np.array([1, -1])
 
         points = np.vstack([upper[::-1], lower[1:]])
 
@@ -285,9 +312,39 @@ class ParsecAirfoil:
         upper = np.array([profile.get(-float(xi))[1] for xi in x])
         lower = np.array([profile.get(float(xi))[1] for xi in x])
 
+        upper_surface, upper_angle, upper_factor = cls._fit_surface(x, upper, effort)
+        lower_surface, lower_angle, lower_factor = cls._fit_surface(x, -lower, effort)
+
+        initial_shared = np.array([
+            0.5 * (upper_angle - lower_angle),
+            0.5 * (upper_factor + lower_factor)
+        ])
+
+        def shared_residual(p: FloatArray) -> FloatArray:
+            angle = float(p[0])
+            factor = float(p[1])
+            upper_pred = _y_at(upper_surface.polyline(300, angle, factor), x)
+            lower_pred = -_y_at(lower_surface.polyline(300, -angle, factor), x)
+            return np.concatenate([upper_pred - upper, lower_pred - lower])  # type: ignore[no-any-return]
+
+        shared_result = scipy.optimize.least_squares(
+            shared_residual,
+            np.clip(initial_shared, np.array([-1.4, -1.0]), np.array([1.4, 1.0])),
+            bounds=(np.array([-1.4, -1.0]), np.array([1.4, 1.0])),
+            x_scale=np.array([2.8, 2.0]),
+            diff_step=1e-5,
+            max_nfev=300
+        )
+
+        trailing_angle = float(shared_result.x[0])
+        trailing_factor = float(shared_result.x[1])
+
         result = cls(
-            upper=cls._fit_surface(x, upper, effort),
-            lower=cls._fit_surface(x, -lower, effort)
+            upper=upper_surface,
+            lower=lower_surface,
+            trailing_edge_angle=trailing_angle,
+            trailing_edge_factor=trailing_factor,
+            numpoints=airfoil.numpoints
         )
 
         errors = np.concatenate([result.upper_at(x) - upper, result.lower_at(x) - lower])
@@ -343,7 +400,7 @@ class ParsecAirfoil:
         return best.x  # type: ignore[no-any-return]
 
     @classmethod
-    def _fit_surface(cls, x: FloatArray, y: FloatArray, effort: int) -> SurfaceParameters:
+    def _fit_surface(cls, x: FloatArray, y: FloatArray, effort: int) -> tuple[SurfaceParameters, float, float]:
         """fit one surface (y positive) to the data"""
         i_max = int(np.argmax(y))
         x_max = min(max(float(x[i_max]), 0.1), 0.7)
@@ -356,10 +413,13 @@ class ParsecAirfoil:
             0., 0.1,
             0., angle, 0.
         ])
-        lower = [0.05, -0.05, 0.001, -1., 0.005, -1., -1.4, -1.]
+        lower = [0.05, 0.001, 0.001, -1., 0.005, -1., -1.4, -1.]
         upper = [0.8, 0.4, 0.3, 1., 0.5, 1., 1.4, 1.]
 
         def residual(p: FloatArray) -> FloatArray:
-            return _y_at(SurfaceParameters.from_list(p).polyline(300), x) - y  # type: ignore[no-any-return]
+            surface = SurfaceParameters.from_list(p[:-2])
+            return _y_at(surface.polyline(300, float(p[-2]), float(p[-1])), x) - y  # type: ignore[no-any-return]
 
-        return SurfaceParameters.from_list(cls._optimize(residual, guess, lower, upper, effort))
+        fitted = cls._optimize(residual, guess, lower, upper, effort)
+        surface = SurfaceParameters.from_list(fitted[:-2])
+        return surface, float(fitted[-2]), float(fitted[-1])

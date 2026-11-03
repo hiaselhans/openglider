@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 import math
 from dataclasses import dataclass, replace
@@ -35,8 +36,6 @@ SURFACE_PARAMETERS = [
     ParameterSpec("front_percentage", "Front percentage [% of y max]", -1, 1, 5, 1, 100),
     ParameterSpec("top_radius", "Top radius", 0.005, 0.5, 0.01),
     ParameterSpec("rear_factor", "Rear 1 percentage [% of y max]", -1, 1, 5, 1, 100),
-    ParameterSpec("trailing_edge_angle", "Trailing edge angle [deg]", -1.4, 1.4, 1, 2, DEGREES),
-    ParameterSpec("trailing_edge_factor", "Trailing edge percentage [% of y max]", -1, 1, 5, 1, 100),
 ]
 
 @dataclass
@@ -178,9 +177,9 @@ class ParsecFitDialog(QtWidgets.QDialog):
         return controlpoints
 
     def _attach_parsec_metadata(self, airfoil: Profile2D, model: ParsecAirfoil, numpoints: int) -> None:
-        setattr(airfoil, "_parsec_controlpoints", self._collect_controlpoints(model))
-        setattr(airfoil, "_parsec_model", model)
-        setattr(airfoil, "_parsec_numpoints", int(numpoints))
+        model_copy = copy.deepcopy(model)
+        model_copy.numpoints = int(numpoints)
+        airfoil.parsec_data = model_copy
 
 
 class ParsecParameterDialog(QtWidgets.QDialog):
@@ -189,13 +188,15 @@ class ParsecParameterDialog(QtWidgets.QDialog):
     def __init__(self, app: MainWindow, source_airfoil: Profile2D, name: str="") -> None:
         super().__init__(app)
         self.app = app
-        self.model = getattr(source_airfoil, "_parsec_model", None)
+        self.model = copy.deepcopy(source_airfoil.parsec_data)
         if self.model is None:
             self.model = ParsecAirfoil.fit(source_airfoil).airfoil
 
         self.specs: dict[str, ParameterSpec] = {}
         self.spinboxes: dict[str, QtWidgets.QDoubleSpinBox] = {}
         self.numpoints = QtWidgets.QSpinBox()
+        self.trailing_angle_spinbox = QtWidgets.QDoubleSpinBox()
+        self.trailing_factor_spinbox = QtWidgets.QDoubleSpinBox()
 
         self.setWindowTitle("Edit PARSEC parameters")
         self.setModal(True)
@@ -221,8 +222,20 @@ class ParsecParameterDialog(QtWidgets.QDialog):
             layout.addWidget(box)
 
         details_form = QtWidgets.QFormLayout()
+        self.trailing_angle_spinbox.setDecimals(2)
+        self.trailing_angle_spinbox.setRange(-1.4 * DEGREES, 1.4 * DEGREES)
+        self.trailing_angle_spinbox.setSingleStep(1.0)
+        self.trailing_angle_spinbox.valueChanged.connect(self._shared_trailing_changed)
+        details_form.addRow("Trailing edge angle [deg]", self.trailing_angle_spinbox)
+
+        self.trailing_factor_spinbox.setDecimals(1)
+        self.trailing_factor_spinbox.setRange(-100.0, 100.0)
+        self.trailing_factor_spinbox.setSingleStep(5.0)
+        self.trailing_factor_spinbox.valueChanged.connect(self._shared_trailing_changed)
+        details_form.addRow("Trailing edge percentage [% of y max]", self.trailing_factor_spinbox)
+
         self.numpoints.setRange(10, 300)
-        self.numpoints.setValue(int(getattr(source_airfoil, "_parsec_numpoints", source_airfoil.numpoints)))
+        self.numpoints.setValue(int(self.model.numpoints))
         details_form.addRow("Result points", self.numpoints)
 
         base_name = name or source_airfoil.name or "parsec"
@@ -255,15 +268,32 @@ class ParsecParameterDialog(QtWidgets.QDialog):
     def _set_model(self, model: ParsecAirfoil) -> None:
         self.model = model
         for name, value in self.model.get_parameters().items():
-            spinbox = self.spinboxes[name]
+            spinbox = self.spinboxes.get(name)
+            if spinbox is None:
+                continue
             spinbox.blockSignals(True)
             spinbox.setValue(self._to_display(name, value))
             spinbox.blockSignals(False)
+
+        self.trailing_angle_spinbox.blockSignals(True)
+        self.trailing_angle_spinbox.setValue(self.model.trailing_edge_angle * DEGREES)
+        self.trailing_angle_spinbox.blockSignals(False)
+
+        self.trailing_factor_spinbox.blockSignals(True)
+        self.trailing_factor_spinbox.setValue(self.model.trailing_edge_factor * 100.0)
+        self.trailing_factor_spinbox.blockSignals(False)
 
     def _parameter_changed(self, key: str, value: float) -> None:
         side, name = key.split("_", 1)
         surface = replace(getattr(self.model, side), **{name: self._from_display(key, value)})
         self.model = replace(self.model, **{side: surface})
+
+    def _shared_trailing_changed(self, *args: object) -> None:
+        self.model = replace(
+            self.model,
+            trailing_edge_angle=self.trailing_angle_spinbox.value() / DEGREES,
+            trailing_edge_factor=self.trailing_factor_spinbox.value() / 100.0
+        )
 
     def _collect_controlpoints(self, model: ParsecAirfoil) -> list[list[tuple[float, float]]]:
         controlpoints: list[list[tuple[float, float]]] = []
@@ -273,9 +303,9 @@ class ParsecParameterDialog(QtWidgets.QDialog):
         return controlpoints
 
     def _attach_parsec_metadata(self, airfoil: Profile2D, model: ParsecAirfoil, numpoints: int) -> None:
-        setattr(airfoil, "_parsec_controlpoints", self._collect_controlpoints(model))
-        setattr(airfoil, "_parsec_model", model)
-        setattr(airfoil, "_parsec_numpoints", int(numpoints))
+        model_copy = copy.deepcopy(model)
+        model_copy.numpoints = int(numpoints)
+        airfoil.parsec_data = model_copy
 
     def _add_edited_airfoil(self) -> None:
         try:

@@ -11,6 +11,7 @@ from odfdo import Document
 from openglider.glider.shape import Shape
 import openglider.rs
 from openglider.airfoil import Profile2D
+from openglider.airfoil.generators.parsec import ParsecAirfoil, SurfaceParameters
 
 from openglider.glider.parametric.arc import ArcCurve, ExplicitArc, LeparaglidingArc
 from openglider.glider.parametric.config import ParametricGliderConfig, SewingAllowanceConfig
@@ -39,6 +40,132 @@ if TYPE_CHECKING:
     from openglider.glider.parametric import ParametricGlider
 
 logger = logging.getLogger(__name__)
+AIRFOIL_METADATA_VERSION = Version("1.0.2")
+
+
+def _collect_parsec_controlpoints(model: ParsecAirfoil) -> list[list[tuple[float, float]]]:
+    controlpoints: list[list[tuple[float, float]]] = []
+    for curve in model.get_curves().values():
+        controlpoints.append([(float(p[0]), float(p[1])) for p in curve.controlpoints.nodes])
+
+    return controlpoints
+
+
+def _to_float(value: object) -> float | None:
+    if isinstance(value, numbers.Number):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _load_airfoils_legacy(table: Table) -> list[Profile2D]:
+    return [Profile2D(profile, name).normalized() for name, profile in transpose_columns(table)]
+
+
+def _load_airfoils_metadata(table: Table) -> list[Profile2D]:
+    profiles: list[Profile2D] = []
+    parameter_names = list(ParsecAirfoil().get_parameters().keys())
+
+    for col in range(0, max(table.num_columns - 1, 0), 2):
+        if table[0, col] is None and table[0, col + 1] is None:
+            continue
+
+        first_key = str(table[0, col]).strip().lower().rstrip(":") if table[0, col] is not None else ""
+        if first_key != "name":
+            return []
+
+        name = "unnamed"
+        airfoil_type = "points"
+        metadata: dict[str, float] = {}
+        row = 0
+        data_start: int | None = None
+
+        while row < table.num_rows:
+            left = table[row, col]
+            right = table[row, col + 1]
+
+            if left is None and right is None:
+                break
+
+            left_number = isinstance(left, numbers.Number)
+            right_number = isinstance(right, numbers.Number)
+            if left_number and right_number:
+                data_start = row
+                break
+
+            key = str(left).strip().lower().rstrip(":") if left is not None else ""
+
+            if key == "name" and isinstance(right, str):
+                name = right
+            elif key in ("airfoil_typ", "airfoil_type", "type") and right is not None:
+                airfoil_type = str(right).strip().lower()
+            elif key in ("x", "x/y"):
+                data_start = row + 1
+                break
+            elif key:
+                value = _to_float(right)
+                if value is not None:
+                    metadata[key] = value
+
+            row += 1
+
+        points: list[tuple[float, float]] = []
+        if data_start is not None:
+            for point_row in range(data_start, table.num_rows):
+                x = table[point_row, col]
+                y = table[point_row, col + 1]
+                if x is None and y is None:
+                    break
+                if isinstance(x, numbers.Number) and isinstance(y, numbers.Number):
+                    points.append((float(x), float(y)))
+                elif points:
+                    break
+
+        if not points:
+            continue
+
+        if airfoil_type == "parsec" and all(name in metadata for name in parameter_names):
+            upper = SurfaceParameters(**{name: metadata[f"upper_{name}"] for name in SurfaceParameters.parameter_names()})
+            lower = SurfaceParameters(**{name: metadata[f"lower_{name}"] for name in SurfaceParameters.parameter_names()})
+            trailing_angle = metadata.get(
+                "trailing_edge_angle",
+                0.5 * (metadata.get("lower_trailing_edge_angle", -0.2) - metadata.get("upper_trailing_edge_angle", 0.2))
+            )
+            trailing_factor = metadata.get(
+                "trailing_edge_factor",
+                0.5 * (metadata.get("upper_trailing_edge_factor", 0.0) + metadata.get("lower_trailing_edge_factor", 0.0))
+            )
+            model = ParsecAirfoil(
+                upper=upper,
+                lower=lower,
+                trailing_edge_angle=float(trailing_angle),
+                trailing_edge_factor=float(trailing_factor)
+            )
+            numpoints = int(metadata.get("numpoints", len(points)))
+            profile = model.get_airfoil(numpoints, name=name).normalized()
+            model.numpoints = int(numpoints)
+            profile.parsec_data = model
+        else:
+            profile = Profile2D(points, name).normalized()
+
+        profiles.append(profile)
+
+    return profiles
+
+
+def _load_airfoils(table: Table, version: Version) -> list[Profile2D]:
+    if version < AIRFOIL_METADATA_VERSION:
+        return _load_airfoils_legacy(table)
+
+    profiles = _load_airfoils_metadata(table)
+    if profiles:
+        return profiles
+
+    return _load_airfoils_legacy(table)
 
 class TableNames:
     cell_sheet = "Cell Elements"
@@ -180,7 +307,7 @@ def import_markdown_glider(cls: type[ParametricGlider], tables: list[Table] | di
     config = ParametricGliderConfig.read_table(table_dct.get(ParametricGliderConfig.table_name, Table()))
     sewing_allowances = SewingAllowanceConfig.read_table(table_dct.get(SewingAllowanceConfig.table_name, Table()))
 
-    profiles = [Profile2D(profile, name).normalized() for name, profile in transpose_columns(table_dct.get("Airfoils", Table()))]
+    profiles = _load_airfoils(table_dct.get("Airfoils", Table()), config.version)
     geometry = get_geometry_explicit(table_dct["geometry"], config)
     # ``cell_no`` includes both stabilizer cells; parametric ``cell_num`` does not.
     cell_num = geometry.shape.cell_no - 2 * config.has_stabicell
@@ -268,7 +395,7 @@ def import_ods_glider(
     # ------------
 
     # profiles = [BezierProfile2D(profile) for profile in transpose_columns(sheets[3])]
-    profiles = [Profile2D(profile, name).normalized() for name, profile in transpose_columns(tables[3])]
+    profiles = _load_airfoils(tables[3], config.version)
 
     if config.version > Version("0.0.1"):
         has_center_cell = not tables[0]["C2"] == 0

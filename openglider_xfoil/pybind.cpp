@@ -45,6 +45,8 @@ PYBIND11_MODULE(xfoil, m) {
         })
 
         .def_readwrite("viscous", &Solver::viscous)
+        .def_readwrite("reynolds", &Solver::reynolds)
+        .def_readwrite("mach", &Solver::mach)
         .def_readwrite("xtr_top", &Solver::xtr_top)
         .def_readwrite("xtr_bottom", &Solver::xtr_bottom)
         .def_readwrite("ncrit", &Solver::ncrit);

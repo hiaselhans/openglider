@@ -4,6 +4,7 @@ import math
 from typing import TYPE_CHECKING
 
 import openglider.rs
+from openglider.airfoil.generators.parsec import ParsecAirfoil
 
 from openglider.glider.parametric.arc import ExplicitArc, LeparaglidingArc
 from openglider.glider.parametric.shape import ParametricShape, LeparaglidingShape
@@ -114,10 +115,39 @@ def get_airfoil_sheet(glider_2d: ParametricGlider) -> Table:
     table = Table(name="Airfoils")
 
     for i, profile in enumerate(profiles):
-        table[0, 2*i] = profile.name or "unnamed"
-        for j, p in enumerate(profile.curve):
-            table[j+1, 2*i] = p[0]
-            table[j+1, 2*i+1] = p[1]
+        col = 2 * i
+        name = profile.name or "unnamed"
+        parsec_model = profile.parsec_data
+        is_parsec = parsec_model is not None
+
+        row = 0
+        table[row, col] = "name"
+        table[row, col + 1] = name
+        row += 1
+
+        table[row, col] = "airfoil_typ"
+        table[row, col + 1] = "parsec" if is_parsec else "points"
+        row += 1
+
+        if is_parsec:
+            table[row, col] = "numpoints"
+            table[row, col + 1] = int(parsec_model.numpoints)
+            row += 1
+
+            parameters = parsec_model.get_parameters()
+            for key, value in parameters.items():
+                table[row, col] = key
+                table[row, col + 1] = float(value)
+                row += 1
+
+        table[row, col] = "x"
+        table[row, col + 1] = "y"
+        row += 1
+
+        for p in profile.curve:
+            table[row, col] = p[0]
+            table[row, col + 1] = p[1]
+            row += 1
 
     return table
 

@@ -22,6 +22,8 @@ from openglider.airfoil.profile_2d_parametric import BezierProfile2D
 from openglider.airfoil.profile_3d import Profile3D
 from openglider.vector.unit import Percentage
 
+from openglider.airfoil.generators.parsec import ParsecAirfoil
+
 
 def get_x_value(x_value_list: list[float], x: Percentage | float) -> float:
     """
