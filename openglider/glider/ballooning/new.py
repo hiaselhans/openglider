@@ -109,7 +109,7 @@ class BallooningBezierNeu(BallooningNew):
 
     @classmethod
     def from_classic(cls, ballooning: Ballooning, numpoints: int=12) -> BallooningBezierNeu:
-        upper = ballooning.upper * openglider.rs.vector.Vector2D([-1, 1])
+        upper = ballooning.upper.scale([-1, 1])
         lower = ballooning.lower
 
         data = upper.reverse().nodes + lower.nodes
@@ -119,7 +119,7 @@ class BallooningBezierNeu(BallooningNew):
 
         #data = [(-p[0], p[1]) for p in upper[::-1]] + list(lower)
 
-        spline = openglider.rs.spline.BSplineCurve.fit(data, numpoints)  # type: ignore
+        spline = openglider.rs.spline.BSplineCurve.fit(openglider.rs.vector.PolyLine2D(data), numpoints)  # type: ignore
         controlpoints: list[openglider.rs.vector.Vector2D] = []
 
         for x, y in spline.controlpoints:

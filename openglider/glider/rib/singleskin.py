@@ -74,7 +74,10 @@ class SingleSkinRib(Rib):
 
     @classmethod
     def from_rib(cls, rib: Rib, single_skin_parameters: SingleSkinParameters, xrot: Angle | None) -> SingleSkinRib:
-        json_dict = rib.__json__()  # type: ignore
+        json_dict = {
+            name: getattr(rib, name)
+            for name in type(rib).model_fields
+        }
         if xrot is not None: 
             json_dict['xrot'] = xrot
 
@@ -234,7 +237,7 @@ class SingleSkinRib(Rib):
                 profile = Profile2D(new_data, f"{self.profile_2d.name}:singleskin_shape({i})")
         
         if normalize_x_values:
-            airfoil = airfoil.set_x_values(self.profile_2d.x_values)
+            profile = profile.set_x_values(self.profile_2d.x_values)
 
         return profile
 
