@@ -70,7 +70,7 @@ class BallooningTable(BaseModel):
                     balloonings.append(BallooningBezierNeu.from_classic(ballooning))
 
                 elif ballooning_type == "V3":
-                    balloonings.append(BallooningBezierNeu(baloon))
+                    balloonings.append(BallooningBezierNeu(baloon, name=name))
 
                 else:
                     raise ValueError("No ballooning type specified")
@@ -85,7 +85,8 @@ class BallooningTable(BaseModel):
         for ballooning_no, ballooning in enumerate(balloonings):
             
             #sheet.append_columns(2)
-            table[0, 2*ballooning_no] = f"ballooning_{ballooning_no}"
+            # the name is how a winglet finds its ballooning
+            table[0, 2*ballooning_no] = ballooning.name or f"ballooning_{ballooning_no}"
             if isinstance(ballooning, BallooningBezierNeu):
                 table[0, 2*ballooning_no+1] = "V3"
                 pts = list(ballooning.controlpoints)
