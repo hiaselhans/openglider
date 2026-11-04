@@ -12,6 +12,7 @@ from openglider.glider.rib.rib import Rib
 import openglider.plots.sketches
 from openglider.glider.glider import Glider
 from openglider.glider.project import GliderProject
+from openglider.glider.winglet import WingletGeometry
 from openglider.plots.config import PatternConfigOld
 from openglider.plots.glider import PlotMaker
 from openglider.plots.spreadsheets import get_glider_data, get_glider_data_internal
@@ -107,6 +108,13 @@ class PatternsNew:
         
 
         plots = self.plotmaker(glider, config=self.config)
+
+        winglet = WingletGeometry.from_project(self.project)
+        if winglet is not None:
+            if self.config.complete_glider:
+                self.logger.warning("the winglet is not marked on the panels of a complete glider")
+            else:
+                plots.winglets.append(winglet)
         glider.lineset.iterate_target_length()
             
         plots.unwrap()

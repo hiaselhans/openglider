@@ -7,6 +7,7 @@ import openglider.rs
 from openglider.glider.glider import Glider
 from openglider.glider.project import GliderProject
 from openglider.glider.texture.uv_map import UVMapMode
+from openglider.glider.winglet import WingletGeometry
 from openglider.gui.views.compare.glider_3d.config import GliderViewConfig, get_riser_indices
 from openglider.gui.views_3d.widgets import View3D
 
@@ -192,6 +193,30 @@ class GliderActors:
 
         return openglider.rs.wgpu.MeshActor(mesh, draw_edges=False)
 
+    def get_winglets(self, numribs: int) -> tuple[openglider.rs.wgpu.MeshActor, openglider.rs.wgpu.MeshActor]:
+        """the panels and the ribs of the winglet, shown with the ones of the glider"""
+        if self.glider_3d is None:
+            raise ValueError("Glider3D not set")
+
+        panels = openglider.mesh.Mesh()
+        ribs = openglider.mesh.Mesh()
+        try:
+            winglet = WingletGeometry.from_project(self.project)
+            if winglet is not None:
+                # both sides of the glider
+                part = winglet.get_mesh(self.glider_3d, numribs, ribs=False)
+                panels = part + part.copy().mirror("y")
+                part = winglet.get_mesh(self.glider_3d, numribs, panels=False)
+                ribs = part + part.copy().mirror("y")
+        except Exception:
+            # a winglet that cannot be built must not take the whole view down
+            logger.exception("winglet")
+
+        return (
+            openglider.rs.wgpu.MeshActor(panels, draw_edges=False),
+            openglider.rs.wgpu.MeshActor(ribs, draw_edges=True, boundary_only=True),
+        )
+
     def add(self, view_3d: View3D, config: GliderViewConfig) -> None:
         texture_key = self._get_texture_scene_key(config)
 
@@ -216,6 +241,7 @@ class GliderActors:
                 "straps": self.get_straps(config.numribs),
                 "miniribs": self.get_miniribs(),
             }
+            self.actors["winglet_panels"], self.actors["winglet_ribs"] = self.get_winglets(config.numribs)
             self._panel_texture_key = texture_key
         else:
             if self.config is not None and (
