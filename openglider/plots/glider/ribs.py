@@ -335,14 +335,15 @@ class RibPlot:
 
         self.weight = MaterialUsage().consume(self.rib.material, area)
 
+        # the rigidfoils put their marks on the rib, so they are drawn before the
+        # layout takes its copy of it
+        rigidfoils = self.draw_rigidfoils(glider)
         layout = drawing.Layout([self.plotpart])
 
-        rigidfoils = self.draw_rigidfoils(glider)
         if add_rigidfoils_to_plot and rigidfoils:
             diff = max([_part_bbox(r)[1] for r in rigidfoils])
             min_x = _part_bbox(self.plotpart)[0]
             for rigidfoil in rigidfoils:
-                print("diff:", diff, "min_x:", min_x)
                 moved = rigidfoil.move(openglider.rs.vector.Vector2D([-(diff-min_x+0.2), 0]))
                 layout.add_part(moved)
 

@@ -33,7 +33,8 @@ class PlotMaker:
     config: PatternConfig
     
     panels: drawing.Layout
-    ribs: list[drawing.Part]
+    # a rib comes with its rigidfoils (RibPlot.flatten)
+    ribs: list[drawing.Layout]
     dribs: PlotPartDict
     straps: collections.OrderedDict[Cell, tuple[list[drawing.Part], list[drawing.Part]]]
     cell_rigidfoils: list[drawing.Layout]
@@ -536,7 +537,7 @@ class PlotMaker:
 
         panels = self.panels
         panels_main, panels_left = self._build_panel_export_branches(panels)
-        ribs = drawing.Layout.stack_row([drawing.Layout([rib]) for rib in self.ribs], self.config.patterns_align_dist_x)
+        ribs = drawing.Layout.stack_row(self.ribs, self.config.patterns_align_dist_x)
 
         def stack_grid(dct: PlotPartDict) -> drawing.Layout:
             layout_lst = [
