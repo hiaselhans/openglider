@@ -235,21 +235,71 @@ class LineSet:
                     
         return recursive_level(node, 0)
 
-    def get_floor_strength(self, node: Node | None=None) -> list[float]:
-        strength_list: list[float] = []
+    def get_floor_strength(self, node: Node | None=None) -> Table:
         node =  node or self.get_main_attachment_point()
-        for i in range(self.floors[node]):
-            lines = self.get_lines_by_floor(i, node, en_style=True)
-            strength = 0.
-            for line in lines:
-                if line.line_type.min_break_load is None:
+
+        first_stage_lines = self.sort_lines_by_attachment_points(self.get_upper_connected_lines(node))
+        table = Table(name="floor_strength")
+
+        max_floors = self.floors.get(node, 0)
+        if max_floors <= 0 or not first_stage_lines:
+            return table
+
+        for floor in range(max_floors):
+            offset = floor * 3
+            table[0, offset + 0] = f"Floor {floor+1} Name"
+            table[0, offset + 1] = f"Floor {floor+1} Material"
+            table[0, offset + 2] = f"Floor {floor+1} Break [N]"
+
+        def insert_tree_row(line: Line, row: int, floor: int) -> int:
+            offset = floor * 3
+            break_load = line.line_type.breaking_load_after_use
+            if break_load is None:
+                break_load = line.line_type.breaking_load
+            if break_load is None:
+                logger.warning(f"no breaking_load (after_use) set for {line.line_type.name}")
+                break_load = 0
+
+            table[row, offset + 0] = line.name
+            table[row, offset + 1] = line.line_type.name
+            table[row, offset + 2] = break_load
+
+            upper_lines = self.sort_lines_by_attachment_points(self.get_upper_connected_lines(line.upper_node))
+            if upper_lines:
+                for upper_line in upper_lines:
+                    row = insert_tree_row(upper_line, row, floor + 1)
+                return row
+
+            # EN 926-1: pad missing upper floors with the same breaking strength.
+            for pad_floor in range(floor + 1, max_floors):
+                pad_offset = pad_floor * 3
+                table[row, pad_offset + 2] = break_load if break_load is not None else "-"
+
+            return row + 1
+
+        row = 1
+        for line in first_stage_lines:
+            row = insert_tree_row(line, row, 0)
+
+        floor_strengths = [0.0 for _ in range(max_floors)]
+        for floor in range(max_floors):
+            for line in self.get_lines_by_floor(floor, node=node, en_style=True):
+                break_load = line.line_type.breaking_load_after_use
+                if break_load is None:
                     logger.warning(f"no min_break_load set for {line.line_type.name}")
                 else:
-                    strength += line.line_type.min_break_load
+                    floor_strengths[floor] += break_load
 
+        sum_row = row
+        for floor, strength in enumerate(floor_strengths):
+            offset = floor * 3
+            table[sum_row, offset + 1] = "Sum"
+            table[sum_row, offset + 2] = strength * 2
 
-            strength_list.append(strength)
-        return strength_list
+            table[sum_row+1, offset + 1] = "kg at 14g"
+            table[sum_row+1, offset + 2] = strength * 2 / 14 / 9.81
+
+        return table
 
     def get_mesh(
         self,
@@ -950,8 +1000,8 @@ class LineSet:
         def get_line_force(line: Line) -> list[str]:
             percentage = ""
 
-            if line.line_type.min_break_load and line.force:
-                percentage = f"{100*line.force/line.line_type.min_break_load:.1f}"
+            if line.line_type.breaking_load and line.force:
+                percentage = f"{100*line.force/line.line_type.breaking_load:.1f}"
 
             return [line.line_type.name, str(line.force), percentage]
 
@@ -995,11 +1045,11 @@ class LineSet:
             table[i+2, 10] = round(line_length.get_cutting_length() * 1000)
 
             if line_load:
-                if line.force is None or line.line_type.min_break_load is None:
+                if line.force is None or line.line_type.breaking_load is None:
                     raise ValueError()
                 table[i+2, 11] = round(line.force)
-                table[i+2, 12] = round(line.line_type.min_break_load)
-                table[i+2, 13] = f"{100*line.force/line.line_type.min_break_load:.1f}%"
+                table[i+2, 12] = round(line.line_type.breaking_load)
+                table[i+2, 13] = f"{100*line.force/line.line_type.breaking_load:.1f}%"
 
         
         return table

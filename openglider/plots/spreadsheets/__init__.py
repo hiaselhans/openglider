@@ -91,6 +91,7 @@ def get_glider_data_internal(project: GliderProject) -> ODSDocument:
     glider.lineset.recalc(glider=glider, iterations=30)
 
     linesheet2 = glider.lineset.get_table_2(line_load=True)
+    floor_strength = glider.lineset.get_floor_strength()
     
     
     
@@ -115,6 +116,7 @@ def get_glider_data_internal(project: GliderProject) -> ODSDocument:
     sheets = (
         specsheet,
         linesheet2,
+        floor_strength,
         #linesheet_force
     )
     

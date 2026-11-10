@@ -15,7 +15,8 @@ class LineType:
     name: str
     thickness: float
     stretch_curve: list[tuple[float, float]] | list[list[float]] | float
-    min_break_load: float | None = None
+    breaking_load: float | None = None
+    breaking_load_after_use: float | None = None
     weight: float = 0
     sheated: bool = False
     seam_correction: float = 0
@@ -29,11 +30,11 @@ class LineType:
     def __post_init__(self) -> None:
         stretch_curve: list[tuple[float, float]] | list[list[float]]
         if isinstance(self.stretch_curve, float):
-            if self.min_break_load is None:
+            if self.breaking_load is None:
                 raise ValueError()
             stretch_curve = [
                 (0, 0),
-                (self.min_break_load, self.stretch_curve)
+                (self.breaking_load, self.stretch_curve)
             ]
         else:
             stretch_curve = [
@@ -49,8 +50,8 @@ class LineType:
         self.thickness = self.thickness / 1000
         self.seam_correction = self.seam_correction / 1000
 
-        if self.min_break_load is None and isinstance(self.stretch_curve, list):
-            self.min_break_load = self.stretch_curve[-1][0]
+        if self.breaking_load is None and isinstance(self.stretch_curve, list):
+            self.breaking_load = self.stretch_curve[-1][0]
 
         registry[self.name] = self
        
@@ -113,6 +114,7 @@ class LineType:
                         <td>stretch</td>
                         <td>spring</td>
                         <td>resistance</td>
+                        <td>resistance after use</td>
                         <td>weight</td>
                         <td>seam correction</td>
                         <td>Colors</td>
@@ -123,7 +125,7 @@ class LineType:
         sorted_types = list(registry.values())
         sorted_types.sort(key=lambda line_type: line_type.name)
         for line_type in sorted_types:
-            stretch = 100 * (line_type.get_stretch_factor(line_type.min_break_load)-1)
+            stretch = 100 * (line_type.get_stretch_factor(line_type.breaking_load)-1)
             html += f"""
                 <tr>
                     <td>{line_type.name}</td>
@@ -131,7 +133,8 @@ class LineType:
                     <td>{line_type.thickness*1000:.02f}</td>
                     <td>{stretch:.2f}%</td>
                     <td>{line_type.get_spring_constant() or 0:.0f}</td>
-                    <td>{line_type.min_break_load or 0:.02f}</td>
+                    <td>{line_type.breaking_load or 0:.02f}</td>
+                    <td>{line_type.breaking_load_after_use or 0:.02f}</td>
                     <td>{line_type.weight or 0:.02f}</td>
                     <td>{line_type.seam_correction:.04f}</td>
                     <td>{", ".join(line_type.colors)}</td>
