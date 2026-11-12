@@ -24,6 +24,7 @@ from openglider.glider.parametric.export_ods import export_ods_2d
 from openglider.glider.parametric.import_ods import import_markdown_2d, import_ods_2d
 from openglider.glider.parametric.shape import ParametricShape, LeparaglidingShape
 from openglider.glider.parametric.table import GliderTables
+from openglider.glider.parametric.winglet import Winglet, is_winglet_entry
 from openglider.glider.rib import Rib, SingleSkinRib
 from openglider.utils import ZipCmp
 from openglider.utils.cache import cached_property
@@ -59,6 +60,8 @@ class ParametricGlider:
     num_interpolate: int=30
     num_profile: int | None=None
     texture: TextureTable = Field(default_factory=TextureTable)
+    # a winglet sewn onto the upper surface (see openglider.glider.winglet)
+    winglet: Winglet | None = None
 
     @classmethod
     def import_ods(cls, path: str) -> ParametricGlider:
@@ -133,8 +136,16 @@ class ParametricGlider:
         """
         return self.arc.get_rib_angles(self.shape.rib_x_values)
 
+    def _own_count(self, entries: list[Profile2D] | list[BallooningBase]) -> int:
+        """the entries of a list the glider uses: the ones at the end only a winglet uses are left out"""
+        count = len(entries)
+        if self.winglet is not None:
+            while count > 1 and is_winglet_entry(entries[count-1].name):
+                count -= 1
+        return count
+
     def merge_ballooning(self, factor: float, multiplier: float | None) -> BallooningBase:
-        factor = max(0, min(len(self.balloonings)-1, factor))
+        factor = max(0, min(self._own_count(self.balloonings)-1, factor))
         k = factor % 1
         i = int(factor // 1)
         first = self.balloonings[i]
@@ -150,7 +161,7 @@ class ParametricGlider:
         return result
 
     def get_merge_profile(self, factor: float) -> Profile2D:
-        factor = max(0, min(len(self.profiles)-1, factor))
+        factor = max(0, min(self._own_count(self.profiles)-1, factor))
         k = factor % 1
         i = int(factor // 1)
         first = self.profiles[i]

@@ -30,6 +30,7 @@ from openglider.glider.parametric.table.rib.holes import HolesTable
 from openglider.glider.parametric.table.rib.profile import ProfileModifierTable
 from openglider.glider.parametric.table.rib.rib import SingleSkinTable
 from openglider.glider.parametric.table.rigidfoil import CellRigidTable, RibRigidTable
+from openglider.glider.parametric.table.winglet import WINGLET_SHEET, read_winglet_sheet, unpack_winglet_table
 from openglider.glider.texture.texture_table import TextureTable
 from openglider.utils import linspace
 from openglider.utils.dataclass import BaseModel
@@ -360,6 +361,13 @@ def import_ods_glider(
     tables: list[Table],
     source_document: Any | None = None,
 ) -> ParametricGlider:
+    # the winglet comes with the glider, in one sheet (see table.winglet)
+    winglet_sections: list[Table] = []
+    for table in tables:
+        if table.name == WINGLET_SHEET:
+            winglet_sections = unpack_winglet_table(table)
+    tables = [table for table in tables if table.name != WINGLET_SHEET]
+
     table_dct: dict[str, Table] = {
         TableNames.cell_sheet: tables[1],
         TableNames.rib_sheet: tables[2]
@@ -446,6 +454,9 @@ def import_ods_glider(
                          aoa=geometry.aoa,
                          profile_merge_curve=geometry.profile_merge_curve,
                          ballooning_merge_curve=geometry.ballooning_merge_curve)
+
+    if winglet_sections:
+        glider_2d.winglet = read_winglet_sheet(winglet_sections, config)
 
     return glider_2d
 

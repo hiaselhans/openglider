@@ -8,6 +8,7 @@ from openglider.glider.rib.rib import Rib
 from openglider.plots import marks
 from openglider.utils.config import Config
 from openglider.utils.distribution import Distribution
+from openglider.vector.unit import Length
 
 
 class PatternConfigOld(Config):
@@ -53,6 +54,11 @@ class PatternConfigOld(Config):
     drib_text_position = 0.1
 
     insert_attachment_point_text = True
+
+    # the footprint of a winglet on the upper panels (see plots.glider.winglet): the
+    # second outline is the sewing line grown by the allowance, rings along both
+    winglet_allowance: Length = Length("10mm")
+    winglet_mark_spacing: Length = Length("5cm")
 
     layout_seperate_panels = True
 

@@ -183,7 +183,7 @@ class Profile2D:
             new_nodes[0][1] = 0
             new_nodes[-1][1] = 0
         
-        return type(self)(new_nodes)
+        return type(self)(new_nodes, self.name)
     
     @property
     def normvectors(self) -> openglider.rs.vector.PolyLine2D:

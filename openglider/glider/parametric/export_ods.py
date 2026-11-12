@@ -9,6 +9,7 @@ from openglider.airfoil.generators.parsec import ParsecAirfoil
 from openglider.glider.parametric.arc import ExplicitArc, LeparaglidingArc
 from openglider.glider.parametric.shape import ParametricShape, LeparaglidingShape
 from openglider.glider.shape import Shape
+from openglider.glider.parametric.table.winglet import get_winglet_sheet
 from openglider.glider.parametric.table.ballooning import BallooningTable
 from openglider.utils.table import Table
 from openglider.utils.types import CurveType
@@ -94,6 +95,10 @@ def get_glider_tables(glider: ParametricGlider) -> list[Table]:
     tables.append(glider.allowances.get_table())
 
     tables.append(glider.tables.curves.table)
+
+    # the winglet goes in the same file, in one sheet
+    if glider.winglet is not None:
+        tables.append(get_winglet_sheet(glider.winglet))
 
     return tables
 

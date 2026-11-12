@@ -10,11 +10,13 @@ from openglider.rs import drawing
 from openglider.glider.cell.cell import Cell
 from openglider.glider.cell.panel.panel import Panel
 from openglider.glider.glider import Glider
+from openglider.glider.winglet import WingletGeometry
 from openglider.utils.config import Config
 
 from openglider.plots.glider.cell import CellPlotMaker as DefaultCellPlotMaker
 from openglider.plots.glider.ribs import RibPlot, SingleSkinRibPlot
 from openglider.plots.glider.minirib import MiniRibPlot
+from openglider.plots.glider.winglet import get_winglet_layout, get_winglet_marks
 from openglider.plots.config import PatternConfig
 from openglider.plots.usage_stats import MaterialUsage
 from openglider.vector.mapping import Quad
@@ -31,7 +33,8 @@ class PlotMaker:
     config: PatternConfig
     
     panels: drawing.Layout
-    ribs: list[drawing.Part]
+    # a rib comes with its rigidfoils (RibPlot.flatten)
+    ribs: list[drawing.Layout]
     dribs: PlotPartDict
     straps: collections.OrderedDict[Cell, tuple[list[drawing.Part], list[drawing.Part]]]
     cell_rigidfoils: list[drawing.Layout]
@@ -55,6 +58,8 @@ class PlotMaker:
         self.cell_rigidfoils = []
         self.miniribs = collections.OrderedDict()
         self.extra_parts: list[drawing.Part] = []
+        # sewn onto the upper panels, their marks go with the ones of the rigidfoils
+        self.winglets: list[WingletGeometry] = []
         self._cellplotmakers: dict[Cell, DefaultCellPlotMaker] = dict()
 
         self.weight: dict[str, MaterialUsage] = {}
@@ -532,7 +537,7 @@ class PlotMaker:
 
         panels = self.panels
         panels_main, panels_left = self._build_panel_export_branches(panels)
-        ribs = drawing.Layout.stack_row([drawing.Layout([rib]) for rib in self.ribs], self.config.patterns_align_dist_x)
+        ribs = drawing.Layout.stack_row(self.ribs, self.config.patterns_align_dist_x)
 
         def stack_grid(dct: PlotPartDict) -> drawing.Layout:
             layout_lst = [
@@ -598,10 +603,22 @@ class PlotMaker:
             extra_parts = drawing.Layout.stack_row([drawing.Layout([part]) for part in self.extra_parts], self.config.patterns_align_dist_x)
             all_layouts += group(extra_parts, "extra_parts")
 
+        # the pieces of the winglets, in a frame of their own at the bottom (the column stacks
+        # upwards)
+        for winglet in self.winglets:
+            all_layouts.insert(0, get_winglet_layout(winglet, self.config, self.glider_3d))
+
         return drawing.Layout.stack_column(all_layouts, 0.1, center_x=True)
 
     def unwrap(self) -> PlotMaker:
         _, extra_marks = self.get_rigidfoils()
+
+        for winglet in self.winglets:
+            for cell_index, panel_marks in get_winglet_marks(winglet, self.glider_3d, self._get_cellplotmaker).items():
+                for panel, marks in panel_marks.items():
+                    extra_marks[cell_index].setdefault(panel, [])
+                    extra_marks[cell_index][panel] += marks
+
         self.get_panels(extra_marks=extra_marks)
         self.get_ribs()
         self.get_dribs()

@@ -4,6 +4,7 @@ from .ballooning import BallooningWidget
 from .curves import CurveWizard
 from .distribution import BallooningCurveWizard, ProfileDistributionWizzard
 from .shape import ShapeWizard
+from .winglet import WingletWizard
 
 input_wizzards = [
     (BallooningWidget, "Ballooning"),
@@ -12,5 +13,6 @@ input_wizzards = [
     (ArcWidget, "Arc"),
     (ShapeWizard, "Shape"),
     (CurveWizard, "Curve"),
-    (AOAWizard, "AOA")
+    (AOAWizard, "AOA"),
+    (WingletWizard, "Winglets"),
 ]

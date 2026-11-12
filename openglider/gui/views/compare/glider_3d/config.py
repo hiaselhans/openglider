@@ -18,6 +18,7 @@ class GliderViewConfig(BaseModel):
     show_straps: bool = True
 
     show_miniribs: bool = True
+    show_winglets: bool = True
 
     show_highres: bool = False
 
@@ -65,6 +66,11 @@ class GliderViewConfig(BaseModel):
             keys.append("straps")
         if self.show_miniribs:
             keys.append("miniribs")
+        # the panels and ribs of the winglet go with the ones of the glider
+        if self.show_winglets and self.show_panels:
+            keys.append("winglet_panels")
+        if self.show_winglets and self.show_ribs:
+            keys.append("winglet_ribs")
         return keys
 
 
@@ -106,6 +112,7 @@ class GliderViewConfigWidget(QtWidgets.QWidget):
         self.add_button("diagonals")
         self.add_button("straps")
         self.add_button("miniribs")
+        self.add_button("winglets")
         self.add_button("highres")
 
     def add_button(self, name: str) -> None:
